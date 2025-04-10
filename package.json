@@ -1,0 +1,23 @@
+{
+  "name": "tg-file-manager",
+  "version": "1.0.0",
+  "description": "Telegram file management system for Cloudflare Pages",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler pages dev --compatibility-date=2024-03-29",
+    "deploy": "wrangler pages deploy",
+    "build": "echo 'No build step required'"
+  },
+  "dependencies": {
+    "@cloudflare/workers-types": "^4.20240208.0",
+    "hono": "^4.0.0",
+    "drizzle-orm": "^0.29.3",
+    "@cloudflare/d1": "^0.0.1",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "wrangler": "^3.28.2",
+    "drizzle-kit": "^0.20.14"
+  }
+}

@@ -1,0 +1,13 @@
+name = "tg-file-manager"
+compatibility_date = "2024-03-29"
+
+[build]
+command = "npm run build"
+output_dir = "dist"
+
+[site]
+bucket = "./public"
+entry-point = "functions"
+
+[vars]
+SESSION_SECRET = "your-session-secret" 
