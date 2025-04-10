@@ -7,17 +7,35 @@
     <link rel="icon" href="cursor.svg" type="image/x-icon">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css" rel="stylesheet">
-    <link href="css/upload.css" rel="stylesheet">
+     <link href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css" rel="stylesheet">
+    <link href="/css/upload.css" rel="stylesheet">
+    <link href="/css/style.css" rel="stylesheet">
     <style>
+        /* 添加登录检查时的加载动画 */
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
         .breadcrumb-item a { text-decoration: none; }
         .table th, .table td {
             text-align: left;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            padding-left: 8px;
-            padding-right: 8px;
+            padding-left: 20px;
+            padding-right: 20px;
         }
         .col-checkbox { width: 5%; }
         .col-number { width: 5%; }
@@ -235,23 +253,18 @@
         }
         /* 搜索相关样式 */
         .search-container {
-            flex: 0 0 auto;
-            min-width: 220px;
-            margin-right: 8px;
+            margin-bottom: 15px;
         }
         .search-container .input-group {
-            width: 100%;
+            max-width: 400px;
         }
         .search-container .form-control {
             border: 1px solid #dee2e6;
             border-right: none;
-            padding: 0.375rem 0.5rem;
         }
         .search-container .btn {
             border: 1px solid #dee2e6;
             border-left: none;
-            padding-left: 0.5rem;
-            padding-right: 0.5rem;
         }
         .search-container .form-control:focus,
         .search-container .btn:focus {
@@ -260,16 +273,6 @@
         }
         .search-container .form-control:focus + .btn {
             border-color: #dee2e6;
-        }
-        /* 添加触摸反馈效果 */
-        .search-container .btn:active {
-            background-color: #e9ecef;
-            transform: translateY(1px);
-        }
-        /* 为搜索框添加焦点样式，使其更容易辨识 */
-        .search-container .form-control:focus {
-            border-color: #80bdff;
-            box-shadow: 0 0 0 0.1rem rgba(0, 123, 255, 0.25);
         }
         /* 分页控件样式 */
         .position-absolute.start-0 {
@@ -289,124 +292,17 @@
         .table-responsive {
             border-bottom: none;
         }
-        .action-buttons-container {
-            overflow-x: auto;
-            white-space: nowrap;
-            -webkit-overflow-scrolling: touch;
-            scrollbar-width: thin;
-            padding-bottom: 5px;
-            touch-action: pan-x;
-            -ms-overflow-style: -ms-autohiding-scrollbar;
-        }
-        .action-buttons-scroll {
-            display: flex;
-            flex-wrap: nowrap;
-            gap: 8px;
-            padding-bottom: 5px;
-            width: max-content;
-            min-width: 100%;
-        }
-        .action-button {
-            flex: 0 0 auto;
-            min-width: 110px;
-            white-space: nowrap;
-            height: 38px;
-        }
-        .action-buttons-container::-webkit-scrollbar {
-            height: 4px;
-        }
-        .action-buttons-container::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 4px;
-        }
-        .action-buttons-container::-webkit-scrollbar-thumb {
-            background: #c1c1c1;
-            border-radius: 4px;
-        }
-        .action-buttons-container::-webkit-scrollbar-thumb:hover {
-            background: #a8a8a8;
-        }
-        @media (max-width: 576px) {
-            .action-button {
-                min-width: 100px;
-                font-size: 0.85rem;
-            }
-            .search-container {
-                min-width: 160px;
-            }
-            .search-container .form-control::placeholder {
-                font-size: 0.8rem;
-            }
-            .search-container .btn {
-                padding: 0.25rem 0.5rem;
-                font-size: 0.8rem;
-            }
-        }
-        /* 添加新的媒体查询，优化桌面端显示 */
-        @media (min-width: 992px) {
-            .action-buttons-container {
-                overflow-x: visible; /* 电脑端不需要滚动 */
-            }
-            .action-buttons-scroll {
-                width: auto; /* 适应内容宽度 */
-            }
-            /* 确保电脑端按钮全部显示时，按钮容器不会过度拉伸 */
-            .action-button {
-                flex: 0 0 auto;
-            }
-            /* 搜索框和按钮在电脑端可以更宽一些 */
-            .search-container {
-                min-width: 250px;
-                margin-right: 16px; /* 加大间距，让布局更美观 */
-            }
-            /* 按钮组在电脑端显示为一行 */
-            .action-buttons-group {
-                display: flex;
-                align-items: center;
-            }
-        }
-        /* 修改移动端样式，确保滚动时按钮组合理显示 */
-        @media (max-width: 991px) {
-            .action-buttons-group {
-                flex: 0 0 auto; /* 不伸缩 */
-            }
-            /* 在小屏幕上减小按钮间的间距 */
-            .action-buttons-group .action-button.ms-2 {
-                margin-left: 6px !important;
-            }
-        }
-        /* 普通桌面尺寸的样式 */
-        @media (min-width: 768px) and (max-width: 991px) {
-            .action-buttons-container {
-                overflow-x: auto;
-            }
-            .search-container {
-                min-width: 200px;
-                margin-right: 12px;
-            }
-        }
-        /* 确保滚动条指示器在所有屏幕尺寸上正确显示 */
-        .custom-scrollbar {
-            display: none; /* 默认隐藏 */
-        }
-        @media (max-width: 991px) {
-            .custom-scrollbar {
-                display: block; /* 只在移动和平板上显示 */
-            }
-        }
     </style>
 </head>
 <body>
-    <!-- 添加加载遮罩 -->
-    <div id="loadingOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; z-index: 9999; display: flex; justify-content: center; align-items: center;">
+    <!-- 添加登录检查加载动画 -->
+    <div id="loading-overlay">
         <div class="spinner-border text-primary" role="status">
             <span class="visually-hidden">加载中...</span>
         </div>
     </div>
-    
-    <!-- 隐藏主要内容 -->
-    <div id="mainContent" style="display: none;">
-    <div class="container mt-4">
+
+    <div class="container mt-4" style="display: none;" id="main-content">
         <h1 class="system-title">Telegram文件管理系统</h1>
         
         <!-- 文件上传卡片 -->
@@ -444,41 +340,37 @@
             </nav>
             
             <div class="user-controls">
-                <button class="btn btn-outline-secondary btn-sm me-2" id="changePasswordBtn" title="修改密码">
+                <button class="btn btn-outline-secondary btn-sm me-2" id="changePasswordBtn" title="修改密码" onclick="document.getElementById('changePasswordModal') && new bootstrap.Modal(document.getElementById('changePasswordModal')).show();">
                     <i class="bi bi-key"></i> 修改密码
                 </button>
-                <button class="btn btn-outline-secondary btn-sm" id="logoutBtn" title="退出登录">
+                <button class="btn btn-outline-secondary btn-sm" id="logoutBtn" title="退出登录" onclick="logout()">
                     <span id="currentUsername"></span>
                     <i class="bi bi-box-arrow-right"></i> 退出
                 </button>
             </div>
         </div>
 
-        <div class="action-buttons-container mb-3">
-            <div class="action-buttons-scroll d-flex flex-nowrap gap-2">
-                <!-- 搜索框先放在最前面 -->
-                <div class="search-container d-flex align-items-center">
-                    <div class="input-group">
-                        <input type="text" class="form-control" id="fileSearchInput" placeholder="搜索文件或文件夹...">
-                        <button class="btn btn-outline-secondary" type="button" id="fileSearchButton">搜索</button>
-                    </div>
-                </div>
-                <!-- 按钮组包装在一个Div中，确保它们紧凑显示 -->
-                <div class="action-buttons-group d-flex flex-nowrap">
-                    <button class="btn btn-primary d-flex align-items-center justify-content-center action-button" onclick="showNewFolderModal()">
-                        <i class="bi bi-folder-plus me-1"></i>
-                        新建文件夹
-                    </button>
-                    <button class="btn btn-danger d-flex align-items-center justify-content-center action-button ms-2" onclick="deleteSelected()">
-                        <i class="bi bi-trash me-1"></i>
-                        批量删除
-                    </button>
-                    <button class="btn btn-info text-white d-flex align-items-center justify-content-center action-button ms-2" onclick="showBatchMoveModal()">
-                        <i class="bi bi-folder-symlink me-1"></i>
-                        批量移动
-                    </button>
+        <div class="d-flex justify-content-start mb-3 gap-2 overflow-auto">
+            <!-- 搜索框 - 放在最前面 -->
+            <div class="search-container d-flex align-items-center">
+                <div class="input-group">
+                    <input type="text" class="form-control" id="fileSearchInput" placeholder="搜索文件或文件夹..." onkeypress="if(event.key === 'Enter') { searchFiles(); }">
+                    <button class="btn btn-outline-secondary" type="button" id="fileSearchButton" onclick="searchFiles()">搜索</button>
                 </div>
             </div>
+
+            <button class="btn btn-primary d-flex align-items-center justify-content-center" style="min-width: 120px; height: 38px; white-space: nowrap;" onclick="showNewFolderModal()">
+                <i class="bi bi-folder-plus me-1"></i>
+                新建文件夹
+            </button>
+            <button class="btn btn-danger d-flex align-items-center justify-content-center" style="min-width: 120px; height: 38px; white-space: nowrap;" onclick="deleteSelected()">
+                <i class="bi bi-trash me-1"></i>
+                批量删除
+            </button>
+            <button class="btn btn-info text-white d-flex align-items-center justify-content-center" style="min-width: 120px; height: 38px; white-space: nowrap;" onclick="showBatchMoveModal()">
+                <i class="bi bi-folder-symlink me-1"></i>
+                批量移动
+            </button>
         </div>
 
         <!-- 文件列表卡片 -->
@@ -552,7 +444,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <input type="text" class="form-control" id="folderName" placeholder="请输入文件夹名称">
+                    <input type="text" class="form-control" id="folderName" placeholder="请输入文件夹名称" onkeypress="if(event.key === 'Enter') { createFolder(); }">
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
@@ -645,7 +537,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="button" class="btn btn-primary" id="savePasswordBtn">保存</button>
+                    <button type="button" class="btn btn-primary" id="savePasswordBtn" onclick="changePassword()">保存</button>
                 </div>
             </div>
         </div>
@@ -684,12 +576,60 @@
             </div>
         </div>
     </div>
-    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
     <script src="https://cdn.jsdelivr.net/npm/moment/moment.min.js"></script>
-    <script src="js/main.js"></script>
-    <script src="js/upload.js"></script>
+    <script src="/js/main.js"></script>
+    <script>
+        // 添加登录检查脚本
+        document.addEventListener('DOMContentLoaded', async function() {
+            try {
+                const response = await fetch('/api/auth/status', {
+                    method: 'GET',
+                    credentials: 'include'
+                });
+                
+                if (!response.ok) {
+                    // 未登录，重定向到登录页
+                    window.location.href = '/login.html';
+                    return;
+                }
+                
+                const data = await response.json();
+                if (!data.loggedIn) {
+                    // 未登录，重定向到登录页
+                    window.location.href = '/login.html';
+                    return;
+                }
+                
+                // 已登录，显示主内容
+                document.getElementById('loading-overlay').style.display = 'none';
+                document.getElementById('main-content').style.display = 'block';
+                
+                // 初始化页面
+                if (typeof initPage === 'function') {
+                    await initPage();
+                }
+                
+                // 在FileManager初始化完成后加载upload.js
+                const uploadScript = document.createElement('script');
+                uploadScript.src = '/js/upload.js';
+                uploadScript.onload = function() {
+                    // 确保upload.js加载完成后初始化上传功能
+                    if (typeof initializeUpload === 'function') {
+                        initializeUpload().catch(error => {
+                            console.error('初始化上传功能失败:', error);
+                            showToast('初始化上传功能失败：' + error.message, 'error');
+                        });
+                    }
+                };
+                document.body.appendChild(uploadScript);
+            } catch (error) {
+                console.error('登录检查失败:', error);
+                window.location.href = '/login.html';
+            }
+        });
+    </script>
 </body>
 </html>

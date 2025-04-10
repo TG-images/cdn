@@ -38,14 +38,7 @@
             padding: 10px;
             margin-top: 20px;
         }
-        .recaptcha-container {
-            display: flex;
-            justify-content: center;
-            margin: 20px 0;
-        }
     </style>
-    <!-- Google reCAPTCHA API -->
-    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
 <body>
     <div class="container">
@@ -60,12 +53,6 @@
                     <label for="password" class="form-label">密码</label>
                     <input type="password" class="form-control" id="password" name="password" required>
                 </div>
-                
-                <!-- reCAPTCHA -->
-                <div class="recaptcha-container">
-                    <div class="g-recaptcha" data-sitekey="6LedlpclAAAAAO0nxd7tCSUtsblPJRyh1lZxmqTC"></div>
-                </div>
-                
                 <button type="submit" class="btn btn-primary login-btn" id="loginBtn">登录</button>
             </form>
         </div>

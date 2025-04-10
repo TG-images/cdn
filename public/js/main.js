@@ -1,36 +1,125 @@
-let currentFolderId = null;
-let selectedFileId = null;
-let pendingDeleteId = null;
-let pendingDeleteIsFolder = false;
-let pendingBatchDeleteFiles = null;
-let selectedItemId = null;
-// 分页相关变量
-let currentPage = 1;
-let totalPages = 1;
-let pageSize = 10;
-let allFiles = []; // 存储当前文件夹中的所有文件
-// 排序相关变量
-let currentSortField = 'name';
-let currentSortOrder = 'asc';
+const FileManager = {
+    currentFolderId: null,
+    selectedFileId: null,
+    pendingDeleteId: null,
+    pendingDeleteIsFolder: false,
+    pendingBatchDeleteFiles: null,
+    selectedItemId: null,
+    // 分页相关变量
+    currentPage: 1,
+    totalPages: 1,
+    pageSize: 10,
+    allFiles: [], // 存储当前文件夹中的所有文件
+    // 排序相关变量
+    currentSortField: 'name',
+    currentSortOrder: 'asc',
+    // 文件夹大小缓存
+    folderSizeCache: {},
+    // Modal 变量
+    newFolderModal: null,
+    moveModal: null,
+    batchMoveModal: null,
+    confirmDeleteModal: null,
+    renameModal: null,
+    // 添加进行中标记，避免重复请求
+    pendingFolderSizeRequests: {}
+};
 
-// 文件夹大小缓存
-const folderSizeCache = {};
+// 初始化 Modal
+function initializeModals() {
+    try {
+        // 确保 Bootstrap 已加载
+        if (typeof bootstrap === 'undefined') {
+            console.error('Bootstrap 未加载');
+            return;
+        }
 
-const newFolderModal = new bootstrap.Modal(document.getElementById('newFolderModal'));
-const moveModal = new bootstrap.Modal(document.getElementById('moveModal'));
-const batchMoveModal = new bootstrap.Modal(document.getElementById('batchMoveModal'));
-const confirmDeleteModal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
-const renameModal = new bootstrap.Modal(document.getElementById('renameModal'));
+        // 等待DOM完全加载
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                initializeModalsAfterLoad();
+            });
+        } else {
+            initializeModalsAfterLoad();
+        }
+    } catch (error) {
+        console.error('Modal 初始化错误:', error);
+    }
+}
+
+function initializeModalsAfterLoad() {
+    try {
+        // 获取 Modal 元素
+        const newFolderModalEl = document.getElementById('newFolderModal');
+        const moveModalEl = document.getElementById('moveModal');
+        const batchMoveModalEl = document.getElementById('batchMoveModal');
+        const confirmDeleteModalEl = document.getElementById('confirmDeleteModal');
+        const renameModalEl = document.getElementById('renameModal');
+
+        // 检查元素是否存在并初始化
+        if (newFolderModalEl && !FileManager.newFolderModal) {
+            FileManager.newFolderModal = new bootstrap.Modal(newFolderModalEl, {
+                backdrop: 'static',
+                keyboard: false
+            });
+        }
+        if (moveModalEl && !FileManager.moveModal) {
+            FileManager.moveModal = new bootstrap.Modal(moveModalEl, {
+                backdrop: 'static',
+                keyboard: false
+            });
+        }
+        if (batchMoveModalEl && !FileManager.batchMoveModal) {
+            FileManager.batchMoveModal = new bootstrap.Modal(batchMoveModalEl, {
+                backdrop: 'static',
+                keyboard: false
+            });
+        }
+        if (confirmDeleteModalEl && !FileManager.confirmDeleteModal) {
+            FileManager.confirmDeleteModal = new bootstrap.Modal(confirmDeleteModalEl, {
+                backdrop: 'static',
+                keyboard: false
+            });
+            
+            // 绑定确认删除按钮的点击事件
+            const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+            if (confirmDeleteBtn && !confirmDeleteBtn.onclick) {
+                confirmDeleteBtn.onclick = performDelete;
+                console.log('已绑定确认删除按钮点击事件');
+            }
+        }
+        if (renameModalEl && !FileManager.renameModal) {
+            FileManager.renameModal = new bootstrap.Modal(renameModalEl, {
+                backdrop: 'static',
+                keyboard: false
+            });
+        }
+    } catch (error) {
+        console.error('Modal 初始化错误:', error);
+    }
+}
+
+// 页面加载时初始化 Modal
+document.addEventListener('DOMContentLoaded', initializeModals);
 
 // 显示提示信息
-function showToast(message, type = 'success') {
-    Toastify({
+function showToast(message, type = 'info') {
+    const options = {
         text: message,
         duration: 3000,
         gravity: "top",
-        position: 'right',
-        backgroundColor: type === 'success' ? '#4caf50' : '#f44336'
-    }).showToast();
+        position: "right",
+        style: {
+            background: type === 'error' ? '#dc3545' : type === 'success' ? '#28a745' : '#17a2b8',
+            color: 'white',
+            borderRadius: '4px',
+            padding: '10px 15px',
+            fontSize: '14px',
+            boxShadow: '0 3px 6px rgba(0,0,0,0.16)'
+        }
+    };
+    
+    Toastify(options).showToast();
 }
 
 // 格式化文件大小
@@ -49,8 +138,18 @@ async function getFolderPath(folderId) {
     try {
         // 获取所有文件
         const response = await fetch('/api/files?all=true');
-        const allFiles = await response.json();
-        const folders = allFiles.filter(f => f.is_folder);
+        const data = await response.json();
+        
+        // 处理API返回的不同格式
+        let folders = [];
+        if (data.files && Array.isArray(data.files)) {
+            folders = data.files.filter(f => f.is_folder);
+        } else if (Array.isArray(data)) {
+            folders = data.filter(f => f.is_folder);
+        } else {
+            console.error('API返回的数据格式不正确:', data);
+            return [];
+        }
         
         // 递归函数，用于构建路径
         function buildPath(id) {
@@ -59,6 +158,10 @@ async function getFolderPath(folderId) {
             
             if (folder.parent_id !== null) {
                 const parentPath = buildPath(folder.parent_id);
+                // 确保folder对象包含name属性
+                if (!folder.name && folder.filename) {
+                    folder.name = folder.filename;
+                }
                 return [...parentPath, folder];
             }
             
@@ -75,21 +178,97 @@ async function getFolderPath(folderId) {
 // 计算文件夹大小
 async function calculateFolderSize(folderId) {
     // 检查缓存中是否已有数据
-    if (folderSizeCache[folderId] !== undefined) {
-        return folderSizeCache[folderId];
+    if (FileManager.folderSizeCache[folderId] !== undefined) {
+        return FileManager.folderSizeCache[folderId];
     }
     
+    // 添加进行中标记，避免重复请求
+    if (FileManager.pendingFolderSizeRequests[folderId]) {
+        return await FileManager.pendingFolderSizeRequests[folderId];
+    }
+
     try {
-        const response = await fetch(`/api/folders/${folderId}/size`);
-        if (!response.ok) {
-            throw new Error('Failed to get folder size');
-        }
-        const data = await response.json();
-        // 存入缓存
-        folderSizeCache[folderId] = data.size;
-        return data.size;
+        // 创建一个Promise并保存到请求中
+        const sizePromise = new Promise(async (resolve) => {
+            try {
+                console.log(`请求文件夹 ${folderId} 大小`);
+                const response = await fetch(`/api/folders/${folderId}/size`, {
+                    credentials: 'include',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    console.warn(`文件夹 ${folderId} 大小获取失败:`, response.status);
+                    // 如果API不可用，使用本地计算备选方案
+                    const fallbackSize = calculateFolderSizeLocally(folderId);
+                    FileManager.folderSizeCache[folderId] = fallbackSize;
+                    resolve(fallbackSize);
+                    return;
+                }
+                
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    console.warn(`文件夹 ${folderId} 返回非JSON格式:`, contentType);
+                    const fallbackSize = calculateFolderSizeLocally(folderId);
+                    FileManager.folderSizeCache[folderId] = fallbackSize;
+                    resolve(fallbackSize);
+                    return;
+                }
+                
+                const data = await response.json();
+                console.log(`文件夹 ${folderId} 大小:`, data);
+                
+                // 存入缓存
+                FileManager.folderSizeCache[folderId] = data.size || 0;
+                resolve(data.size || 0);
+            } catch (error) {
+                console.error(`计算文件夹 ${folderId} 大小失败:`, error);
+                // 尝试本地计算
+                const fallbackSize = calculateFolderSizeLocally(folderId);
+                FileManager.folderSizeCache[folderId] = fallbackSize;
+                resolve(fallbackSize);
+            } finally {
+                // 完成后删除进行中标记
+                delete FileManager.pendingFolderSizeRequests[folderId];
+            }
+        });
+        
+        // 保存请求Promise
+        FileManager.pendingFolderSizeRequests[folderId] = sizePromise;
+        return await sizePromise;
     } catch (error) {
-        console.error('Error calculating folder size:', error);
+        console.error('计算文件夹大小出错:', error);
+        return 0;
+    }
+}
+
+// 本地计算文件夹大小（作为备选方案）
+function calculateFolderSizeLocally(folderId) {
+    try {
+        // 使用深度优先搜索递归计算
+        let totalSize = 0;
+        
+        function dfs(folder_id) {
+            // 获取当前文件夹的直接子文件和子文件夹
+            const children = allFiles.filter(file => file.parent_id == folder_id);
+            
+            for (const child of children) {
+                if (child.is_folder) {
+                    // 递归计算子文件夹大小
+                    dfs(child.id);
+                } else {
+                    // 累加文件大小
+                    totalSize += parseInt(child.file_size || child.size || 0, 10);
+                }
+            }
+        }
+        
+        dfs(folderId);
+        return totalSize;
+    } catch (error) {
+        console.error('本地计算文件夹大小失败:', error);
         return 0;
     }
 }
@@ -97,27 +276,68 @@ async function calculateFolderSize(folderId) {
 // 加载文件列表
 async function loadFiles() {
     try {
-        console.log('Loading files for folder:', currentFolderId);
-        const response = await fetch(`/api/files?parent_id=${currentFolderId || ''}`);
+        console.log('Loading files for folder:', FileManager.currentFolderId);
+        const response = await fetch(`/api/files?parent_id=${FileManager.currentFolderId || ''}`, {
+            credentials: 'include' // 确保包含Cookie
+        });
         console.log('Files API response status:', response.status);
+        
+        if (response.status === 401 || response.status === 403) {
+            // 未登录，重定向到登录页
+            console.log('用户未登录，重定向到登录页');
+            window.location.href = '/login.html';
+            return;
+        }
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        allFiles = await response.json();
-        console.log('Loaded files:', allFiles);
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            console.error('Invalid content type:', contentType);
+            throw new Error('服务器返回了非JSON格式的数据');
+        }
+        
+        const data = await response.json();
+        console.log('文件列表响应:', data);
+        
+        // 检查是否需要重定向
+        if (data.redirect) {
+            console.log('服务器要求重定向:', data.redirect);
+            window.location.href = data.redirect;
+            return;
+        }
+        
+        // 处理文件列表数据 - 增强版
+        console.log('处理文件数据，数据类型:', typeof data, Array.isArray(data) ? '是数组' : '不是数组');
+        if (data && typeof data === 'object') {
+            if (data.files && Array.isArray(data.files)) {
+                console.log('直接使用data.files数组');
+                FileManager.allFiles = data.files;
+            } else if (Array.isArray(data)) {
+                console.log('直接使用data数组');
+                FileManager.allFiles = data;
+            } else {
+                console.error('API返回的数据格式不正确, data:', data);
+                FileManager.allFiles = [];
+            }
+        } else {
+            console.error('API返回的数据不是对象:', data);
+            FileManager.allFiles = [];
+        }
+        console.log('Loaded files:', FileManager.allFiles);
         
         // 更新面包屑
-        const folderPath = await getFolderPath(currentFolderId);
+        const folderPath = await getFolderPath(FileManager.currentFolderId);
         console.log('Current folder path:', folderPath);
         updateBreadcrumb(folderPath);
         
         // 应用分页
         renderFileList();
     } catch (error) {
-        showToast('加载文件列表失败', 'error');
         console.error('Error loading files:', error);
+        showToast(`加载文件列表失败: ${error.message}`, 'error');
     }
 }
 
@@ -142,8 +362,8 @@ function sortFiles(files, field = 'name', order = 'asc') {
             }
 
             // 如果都是文件夹或都是文件，按名称排序
-            const aNameParts = splitName(a.name);
-            const bNameParts = splitName(b.name);
+            const aNameParts = splitName(a.filename || a.name || '');
+            const bNameParts = splitName(b.filename || b.name || '');
             
             // 如果是文件且扩展名不同，可以选择按扩展名排序
             if (!a.is_folder && !b.is_folder && aNameParts.ext !== bNameParts.ext) {
@@ -154,8 +374,8 @@ function sortFiles(files, field = 'name', order = 'asc') {
             
             // 按名称排序
             return order === 'asc' ? 
-                a.name.localeCompare(b.name) : 
-                b.name.localeCompare(a.name);
+                (a.filename || a.name || '').localeCompare(b.filename || b.name || '') : 
+                (b.filename || b.name || '').localeCompare(a.filename || a.name || '');
             
         } else if (field === 'size') {
             // 文件大小排序
@@ -163,18 +383,18 @@ function sortFiles(files, field = 'name', order = 'asc') {
             let bSize = b.size || 0;
             
             // 如果是文件夹，使用缓存的大小
-            if (a.is_folder && folderSizeCache[a.id] !== undefined) {
-                aSize = folderSizeCache[a.id];
+            if (a.is_folder && FileManager.folderSizeCache[a.id] !== undefined) {
+                aSize = FileManager.folderSizeCache[a.id];
             }
-            if (b.is_folder && folderSizeCache[b.id] !== undefined) {
-                bSize = folderSizeCache[b.id];
+            if (b.is_folder && FileManager.folderSizeCache[b.id] !== undefined) {
+                bSize = FileManager.folderSizeCache[b.id];
             }
             
             // 如果文件夹大小未缓存，尝试将文件夹排在最后或最前
-            if (a.is_folder && folderSizeCache[a.id] === undefined) {
+            if (a.is_folder && FileManager.folderSizeCache[a.id] === undefined) {
                 return order === 'asc' ? -1 : 1;
             }
-            if (b.is_folder && folderSizeCache[b.id] === undefined) {
+            if (b.is_folder && FileManager.folderSizeCache[b.id] === undefined) {
                 return order === 'asc' ? 1 : -1;
             }
             
@@ -192,13 +412,13 @@ function sortFiles(files, field = 'name', order = 'asc') {
 
 // 处理排序点击事件
 function handleSort(field) {
-    if (currentSortField === field) {
+    if (FileManager.currentSortField === field) {
         // 如果点击的是当前排序字段，切换排序顺序
-        currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
+        FileManager.currentSortOrder = FileManager.currentSortOrder === 'asc' ? 'desc' : 'asc';
         } else {
         // 如果点击的是新字段，设置为升序
-        currentSortField = field;
-        currentSortOrder = 'asc';
+        FileManager.currentSortField = field;
+        FileManager.currentSortOrder = 'asc';
     }
     
     // 更新排序图标
@@ -214,140 +434,115 @@ function updateSortIcon() {
     document.querySelectorAll('th .sort-icon').forEach(icon => icon.remove());
     
     // 添加当前排序列的图标
-    const th = document.querySelector(`th[data-sort="${currentSortField}"]`);
+    const th = document.querySelector(`th[data-sort="${FileManager.currentSortField}"]`);
     if (th) {
         const icon = document.createElement('span');
         icon.className = 'sort-icon ms-1';
-        icon.innerHTML = currentSortOrder === 'asc' ? '↑' : '↓';
+        icon.innerHTML = FileManager.currentSortOrder === 'asc' ? '↑' : '↓';
         th.appendChild(icon);
     }
 }
 
-// 更新分页信息
-function updatePagination(totalItems) {
-    const pagination = document.getElementById('pagination');
-    const pageInfo = document.getElementById('pageInfo');
-    const prevPage = document.getElementById('prevPage');
-    const nextPage = document.getElementById('nextPage');
-    const pageSize = parseInt(document.getElementById('pageSize').value);
-    
-    // 计算总页数
-    const totalPages = Math.ceil(totalItems / pageSize);
-    
-    // 更新分页信息
-    pageInfo.textContent = `${currentPage} / ${totalPages}`;
-    
-    // 更新上一页按钮状态
-    prevPage.classList.toggle('disabled', currentPage <= 1);
-    prevPage.style.pointerEvents = currentPage <= 1 ? 'none' : 'auto';
-    
-    // 更新下一页按钮状态
-    nextPage.classList.toggle('disabled', currentPage >= totalPages);
-    nextPage.style.pointerEvents = currentPage >= totalPages ? 'none' : 'auto';
-    
-    // 显示或隐藏分页控件
-    pagination.style.display = totalPages > 1 ? 'block' : 'none';
-}
-
 // 渲染文件列表（带分页）
 async function renderFileList() {
-    console.log('Rendering file list, total files:', allFiles.length);
+    // 防御性代码，确保allFiles是数组
+    if (FileManager.allFiles && !Array.isArray(FileManager.allFiles)) {
+        console.warn('allFiles不是数组，尝试修复:', FileManager.allFiles);
+        if (FileManager.allFiles.files && Array.isArray(FileManager.allFiles.files)) {
+            FileManager.allFiles = FileManager.allFiles.files;
+        } else {
+            console.error('无法修复allFiles，重置为空数组');
+            FileManager.allFiles = [];
+        }
+    }
+    
+    console.log('Rendering file list, total files:', FileManager.allFiles.length);
     const tbody = document.getElementById('fileList');
     tbody.innerHTML = '';
     
-    if (allFiles.length === 0) {
+    if (FileManager.allFiles.length === 0) {
         tbody.innerHTML = '<tr><td colspan="6" class="text-center">当前文件夹为空</td></tr>';
         return;
     }
     
-    // 事先计算所有文件夹的大小并存入缓存
-    const folderSizePromises = allFiles
-        .filter(file => file.is_folder)
-        .map(folder => {
-            if (folderSizeCache[folder.id] === undefined) {
-                return calculateFolderSize(folder.id)
-                    .then(size => {
-                        folderSizeCache[folder.id] = size;
-                        return { id: folder.id, size };
-                    });
-            }
-            return Promise.resolve({ id: folder.id, size: folderSizeCache[folder.id] });
-        });
-    
-    // 等待所有文件夹大小计算完成
-    await Promise.all(folderSizePromises);
-    
-    // 应用排序
-    const sortedFiles = sortFiles(allFiles, currentSortField, currentSortOrder);
+    // 优化：限制并发请求数量，只预先计算当前页的文件夹大小
+    const sortedFiles = sortFiles(FileManager.allFiles, FileManager.currentSortField, FileManager.currentSortOrder);
     
     // 计算分页
-    totalPages = Math.ceil(sortedFiles.length / pageSize);
-    if (currentPage > totalPages && totalPages > 0) {
-        currentPage = totalPages;
+    FileManager.totalPages = Math.ceil(sortedFiles.length / FileManager.pageSize);
+    if (FileManager.currentPage > FileManager.totalPages && FileManager.totalPages > 0) {
+        FileManager.currentPage = FileManager.totalPages;
     }
     
     console.log('Pagination info:', {
-        currentPage,
-        totalPages,
-        pageSize,
+        currentPage: FileManager.currentPage,
+        totalPages: FileManager.totalPages,
+        pageSize: FileManager.pageSize,
         totalFiles: sortedFiles.length
     });
     
-    // 根据是否需要分页来显示或隐藏分页控件
-    const paginationElement = document.getElementById('pagination');
-    if (sortedFiles.length > pageSize) {
-        paginationElement.style.cssText = 'display: block !important';
-        document.getElementById('pageInfo').textContent = `${currentPage} / ${totalPages}`;
-        
-        // 更新上一页和下一页按钮状态
-        const prevButton = document.getElementById('prevPage').parentElement;
-        const nextButton = document.getElementById('nextPage').parentElement;
-        
-        prevButton.classList.toggle('disabled', currentPage <= 1);
-        nextButton.classList.toggle('disabled', currentPage >= totalPages);
-    } else {
-        paginationElement.style.cssText = 'display: none !important';
-    }
-    
     // 计算当前页的文件范围
-    const start = (currentPage - 1) * pageSize;
-    const end = Math.min(start + pageSize, sortedFiles.length);
+    const start = (FileManager.currentPage - 1) * FileManager.pageSize;
+    const end = Math.min(start + FileManager.pageSize, sortedFiles.length);
     const currentPageFiles = sortedFiles.slice(start, end);
+    
+    // 更新分页控件
+    updatePagination(sortedFiles.length);
+    
+    // 仅计算当前页文件夹的大小，减少API请求
+    const folderSizePromises = [];
+    
+    currentPageFiles.forEach(file => {
+        if (file.is_folder && FileManager.folderSizeCache[file.id] === undefined) {
+            const promise = calculateFolderSize(file.id)
+                .then(size => ({ id: file.id, size }));
+            folderSizePromises.push({ 
+                id: file.id,
+                promise
+            });
+        }
+    });
     
     console.log('Current page files:', {
         start,
         end,
         filesCount: currentPageFiles.length,
-        files: currentPageFiles
+        folderPromises: folderSizePromises.length
     });
     
-    // 显示文件列表
+    // 显示文件列表，先不显示文件夹大小
     currentPageFiles.forEach((file, index) => {
         const actualIndex = start + index + 1;
         const tr = document.createElement('tr');
         
-        let fileSize = file.size || 0;
-        if (file.is_folder) {
-            // 使用缓存的大小
-            fileSize = folderSizeCache[file.id] !== undefined ? folderSizeCache[file.id] : 0;
-        }
+        let fileSize = parseInt(file.file_size || file.size || 0, 10);
+        
+        // 检查文件是否支持预览
+        const canPreview = !file.is_folder && fileSize <= 20 * 1024 * 1024; // 小于等于20MB
+        const fileName = file.filename || file.name || '';
+        const fileExt = fileName.split('.').pop().toLowerCase();
+        const previewableExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'mp4', 'mp3', 'wav', 'webm', 'ogg', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+        const showPreviewBtn = canPreview && previewableExts.includes(fileExt);
         
         tr.innerHTML = `
             <td><input type="checkbox" class="file-checkbox" value="${file.id}"></td>
             <td>${actualIndex}</td>
             <td style="text-align: left; padding-left: 8px;">${file.is_folder ? '📁 ' : '📄 '}${
                 file.is_folder 
-                ? `<a href="#" class="folder-link" data-id="${file.id}" style="text-align: left;">${file.name}</a>`
-                : `<span class="file-name" style="text-align: left; display: inline-block;">${file.name}</span>`
+                ? `<a href="#" class="folder-link" data-id="${file.id}" title="${file.filename || file.name}" style="text-align: left;">${file.filename || file.name}</a>`
+                : `<span class="file-name" style="text-align: left; display: inline-block;" title="${file.filename || file.name}">${file.filename || file.name}</span>`
             }</td>
             <td class="file-size" data-id="${file.id}" style="text-align: left;">${formatSize(fileSize)}</td>
             <td style="text-align: left;">${moment(file.created_at).format('YYYY-MM-DD HH:mm:ss')}</td>
             <td class="actions">
                 <div class="btn-group" role="group">
-                    <button class="btn btn-sm btn-warning" onclick="showRenameModal(${file.id}, '${file.name}')">重命名</button>
+                    <button class="btn btn-sm btn-warning" onclick="showRenameModal(${file.id}, '${(file.filename || file.name).replace(/'/g, "\\'")}')">重命名</button>
                     <button class="btn btn-sm btn-info text-white" onclick="showMoveModal(${file.id})">移动</button>
                     <button class="btn btn-sm btn-danger" onclick="deleteFile(${file.id}, ${file.is_folder})">删除</button>
-                    ${file.is_folder ? '' : `<button class="btn btn-sm btn-primary" onclick="openTelegramFile('${file.id}')">下载</button>`}
+                    ${file.is_folder ? '' : `
+                        ${showPreviewBtn ? `<button class="btn btn-sm btn-success" onclick="previewFile('${file.id}')"><i class="bi bi-eye"></i> 预览</button>` : ''}
+                        <button class="btn btn-sm btn-primary" onclick="openTelegramFile('${file.id}')"><i class="bi bi-download"></i> 下载</button>
+                    `}
                 </div>
             </td>
         `;
@@ -366,8 +561,21 @@ async function renderFileList() {
         tbody.appendChild(tr);
     });
     
-    // 更新分页信息
-    updatePagination(sortedFiles.length);
+    // 等待所有文件夹大小计算完成并更新UI
+    if (folderSizePromises.length > 0) {
+        Promise.all(folderSizePromises.map(item => item.promise))
+            .then(sizes => {
+                folderSizePromises.forEach((item, index) => {
+                    const sizeCell = document.querySelector(`.file-size[data-id="${item.id}"]`);
+                    if (sizeCell) {
+                        sizeCell.textContent = formatSize(sizes[index].size);
+                    }
+                });
+            })
+            .catch(error => {
+                console.error('Error updating folder sizes:', error);
+            });
+    }
     
     console.log('File list rendering completed');
     // 初始化新的 tooltips
@@ -416,25 +624,14 @@ function updateBreadcrumb(folderPath) {
 
 // 显示新建文件夹模态框
 function showNewFolderModal() {
-    const folderNameInput = document.getElementById('folderName');
-    folderNameInput.value = '';
-    
-    // 保存触发按钮的引用
-    const triggerButton = document.activeElement;
-    
-    // 在模态框关闭时将焦点返回到触发按钮
-    newFolderModal._element.addEventListener('hidden.bs.modal', function () {
-        if (triggerButton && typeof triggerButton.focus === 'function') {
-            setTimeout(() => triggerButton.focus(), 0);
-        }
-    }, { once: true });
-    
-    newFolderModal.show();
-    
-    // 模态框显示后自动聚焦到输入框
-    newFolderModal._element.addEventListener('shown.bs.modal', () => {
-        folderNameInput.focus();
-    }, { once: true });
+    // 清空输入框
+    document.getElementById('folderName').value = '';
+    // 显示模态框
+    FileManager.newFolderModal.show();
+    // 显示后自动聚焦到输入框
+    setTimeout(() => {
+        document.getElementById('folderName').focus();
+    }, 500);
 }
 
 // 创建文件夹
@@ -442,25 +639,30 @@ async function createFolder() {
     const name = document.getElementById('folderName').value.trim();
     if (!name) {
         showToast('请输入文件夹名称', 'error');
-            return;
+        return;
     }
 
     try {
         const response = await fetch('/api/folders', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, parentId: currentFolderId })
+            body: JSON.stringify({ 
+                name, 
+                parent_id: FileManager.currentFolderId   // 使用FileManager.currentFolderId
+            })
         });
 
         if (response.ok) {
             showToast('文件夹创建成功');
-            newFolderModal.hide();
-            currentPage = 1; // 创建新文件夹后回到第一页
+            FileManager.newFolderModal.hide();  // 使用FileManager.newFolderModal
+            FileManager.currentPage = 1; // 创建新文件夹后回到第一页
             loadFiles();
         } else {
-            showToast('文件夹创建失败', 'error');
-            }
-                } catch (error) {
+            const errorData = await response.json();
+            showToast(errorData.error || '文件夹创建失败', 'error');
+        }
+    } catch (error) {
+        console.error('创建文件夹出错:', error);
         showToast('文件夹创建失败', 'error');
     }
 }
@@ -563,7 +765,7 @@ async function createFolderItem(folder, container, currentFileIds, level = 0, al
                value="${folder.id}" 
                id="${container.closest('#batchFolderTree') ? 'batch_folder_' : 'folder_'}${folder.id}"
                ${isDisabled ? 'disabled' : ''}>
-        <span class="folder-name">📁 ${folder.name}</span>
+        <span class="folder-name">📁 ${folder.filename || folder.name}</span>
     `;
 
     // 添加到容器
@@ -628,9 +830,24 @@ async function loadFolderTree(parentId, container, currentFileId = null) {
         // 清空容器
         container.innerHTML = '';
         
-        // 一次性获取所有文件
-        const response = await fetch(`/api/files?all=true`);
-        const allFiles = await response.json();
+        // 获取所有文件
+        const response = await fetch('/api/files?all=true');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // 处理API返回的不同格式
+        let allFiles = [];
+        if (data.files && Array.isArray(data.files)) {
+            allFiles = data.files;
+        } else if (Array.isArray(data)) {
+            allFiles = data;
+        } else {
+            console.error('API返回的数据格式不正确:', data);
+            throw new Error('返回的数据格式不正确');
+        }
         
         // 添加根目录项
         const rootItem = document.createElement('div');
@@ -723,20 +940,25 @@ const performSearch = async (isBatch = false) => {
     }
     
     try {
-        // 获取所有文件
         const response = await fetch('/api/files?all=true');
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            throw new Error('获取文件列表失败');
         }
         
-        const allFiles = await response.json();
-        if (!Array.isArray(allFiles)) {
+        const data = await response.json();
+        let files = [];
+        
+        if (data.files && Array.isArray(data.files)) {
+            files = data.files;
+        } else if (Array.isArray(data)) {
+            files = data;
+        } else {
+            console.error('API返回的数据格式不正确:', data);
             throw new Error('返回的数据格式不正确');
         }
         
-        // 过滤搜索结果，只显示文件夹
-        const searchResults = allFiles.filter(file => 
-            file.is_folder && file.name.toLowerCase().includes(searchTerm)
+        const filteredFiles = files.filter(file => 
+            (file.filename || file.name || '').toLowerCase().includes(searchTerm)
         );
         
         // 清空当前目录树
@@ -749,7 +971,7 @@ const performSearch = async (isBatch = false) => {
         folderTree.appendChild(resultsContainer);
         
         // 显示搜索结果
-        if (searchResults.length === 0) {
+        if (filteredFiles.length === 0) {
             resultsContainer.innerHTML += '<div class="text-muted">未找到匹配的文件夹</div>';
         } else {
             // 创建搜索结果树
@@ -764,21 +986,21 @@ const performSearch = async (isBatch = false) => {
             }
             
             // 显示文件夹
-            for (const folder of searchResults) {
+            for (const folder of filteredFiles) {
                 // 检查是否可以移动到该文件夹
                 let isDisabled = false;
                 if (isBatch) {
                     // 批量移动逻辑
                     isDisabled = currentSelectedFiles.includes(folder.id) || 
                                 currentSelectedFiles.some(id => 
-                                    isSubfolderSync(folder.id, id, allFiles) || // 目标文件夹是当前文件夹的子孙文件夹
-                                    isParentFolder(folder.id, id, allFiles)     // 目标文件夹是当前文件夹的父文件夹
+                                    isSubfolderSync(folder.id, id, files) || // 目标文件夹是当前文件夹的子孙文件夹
+                                    isParentFolder(folder.id, id, files)     // 目标文件夹是当前文件夹的父文件夹
                                 );
                 } else {
                     // 单个移动逻辑
-                    isDisabled = selectedFileId === folder.id || 
-                                isSubfolderSync(folder.id, selectedFileId, allFiles) || // 目标文件夹是当前文件夹的子孙文件夹
-                                isParentFolder(folder.id, selectedFileId, allFiles);    // 目标文件夹是当前文件夹的父文件夹
+                    isDisabled = FileManager.selectedFileId === folder.id || 
+                                isSubfolderSync(folder.id, FileManager.selectedFileId, files) || // 目标文件夹是当前文件夹的子孙文件夹
+                                isParentFolder(folder.id, FileManager.selectedFileId, files);    // 目标文件夹是当前文件夹的父文件夹
                 }
                 
                 const folderItem = document.createElement('div');
@@ -788,7 +1010,7 @@ const performSearch = async (isBatch = false) => {
                            value="${folder.id}" 
                            id="search_folder_${folder.id}" 
                            ${isDisabled ? 'disabled' : ''}>
-                    <span class="folder-name">📁 ${folder.name}</span>
+                    <span class="folder-name">📁 ${folder.filename || folder.name}</span>
                 `;
                 searchTree.appendChild(folderItem);
 
@@ -825,7 +1047,7 @@ const performSearch = async (isBatch = false) => {
 
 // 显示移动文件模态框
 async function showMoveModal(fileId) {
-    selectedFileId = fileId;
+    FileManager.selectedFileId = fileId;
     const folderTree = document.getElementById('folderTree');
     
     // 添加搜索框和按钮
@@ -865,7 +1087,7 @@ async function showMoveModal(fileId) {
     // 修复辅助功能，在模态框关闭时将焦点移回触发按钮
     const triggerButton = document.activeElement;
     
-    moveModal._element.addEventListener('hidden.bs.modal', function () {
+    FileManager.moveModal._element.addEventListener('hidden.bs.modal', function () {
         if (triggerButton && typeof triggerButton.focus === 'function') {
             setTimeout(() => triggerButton.focus(), 0);
         }
@@ -875,7 +1097,7 @@ async function showMoveModal(fileId) {
         }
     }, { once: true });
     
-    moveModal.show();
+    FileManager.moveModal.show();
 }
 
 // 显示批量移动模态框
@@ -925,7 +1147,7 @@ async function showBatchMoveModal() {
     // 修复辅助功能，在模态框关闭时将焦点移回触发按钮
     const triggerButton = document.activeElement;
     
-    batchMoveModal._element.addEventListener('hidden.bs.modal', function () {
+    FileManager.batchMoveModal._element.addEventListener('hidden.bs.modal', function () {  // 使用FileManager.batchMoveModal
         if (triggerButton && typeof triggerButton.focus === 'function') {
             setTimeout(() => triggerButton.focus(), 0);
         }
@@ -935,7 +1157,7 @@ async function showBatchMoveModal() {
         }
     }, { once: true });
     
-    batchMoveModal.show();
+    FileManager.batchMoveModal.show();  // 使用FileManager.batchMoveModal
 }
 
 // 移动文件
@@ -946,34 +1168,60 @@ async function moveFile() {
         return;
     }
     
+    const targetFolderId = selectedFolder.value === 'null' ? null : selectedFolder.value;
+    
+    console.log('移动文件/文件夹:', {
+        fileId: FileManager.selectedFileId,  // 使用FileManager.selectedFileId
+        targetFolderId: targetFolderId
+    });
+    
     try {
-        const response = await fetch(`/api/files/${selectedFileId}/move`, {
+        const response = await fetch(`/api/files/${FileManager.selectedFileId}/move`, {  // 使用FileManager.selectedFileId
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ newParentId: selectedFolder.value === 'null' ? null : selectedFolder.value })
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({ newParentId: targetFolderId })
         });
+
+        console.log('移动响应状态:', response.status);
+        const responseText = await response.text();
+        console.log('移动响应内容:', responseText);
+        
+        let responseData;
+        try {
+            responseData = JSON.parse(responseText);
+        } catch (e) {
+            responseData = { message: responseText };
+        }
 
         if (response.ok) {
             showToast('移动成功');
-            moveModal.hide();
+            FileManager.moveModal.hide();  // 使用FileManager.moveModal
             // 如果当前页将没有内容了，且不是第一页，则回到上一页
-            if (allFiles.length <= pageSize && currentPage > 1) {
-                currentPage--;
+            if (FileManager.allFiles.length <= FileManager.pageSize && FileManager.currentPage > 1) {
+                FileManager.currentPage--;
             }
             loadFiles();
         } else {
-            showToast('移动失败', 'error');
+            const errorMsg = responseData.error || responseData.message || '未知错误';
+            console.error('移动失败:', errorMsg);
+            showToast(`移动失败: ${errorMsg}`, 'error');
         }
     } catch (error) {
-        showToast('移动失败', 'error');
+        console.error('移动请求错误:', error);
+        showToast(`移动失败: ${error.message}`, 'error');
     }
 }
 
 // 删除文件或文件夹
 async function deleteFile(id, isFolder) {
+    console.log('准备删除:', { id, isFolder });
     // 存储待删除的ID和类型
-    pendingDeleteId = id;
-    pendingDeleteIsFolder = isFolder;
+    FileManager.pendingDeleteId = id;
+    FileManager.pendingDeleteIsFolder = isFolder;
     
     // 根据类型设置不同的确认消息
     const confirmMessage = isFolder 
@@ -984,71 +1232,123 @@ async function deleteFile(id, isFolder) {
     document.getElementById('confirmDeleteMessage').textContent = confirmMessage;
     
     // 显示确认对话框
-    confirmDeleteModal.show();
+    FileManager.confirmDeleteModal.show();
 }
 
 // 实际执行删除操作
 async function performDelete() {
+    console.log('执行删除操作:', { 
+        pendingDeleteId: FileManager.pendingDeleteId, 
+        pendingDeleteIsFolder: FileManager.pendingDeleteIsFolder,
+        pendingBatchDeleteFiles: FileManager.pendingBatchDeleteFiles 
+    });
+    
     // 单个文件删除
-    if (pendingDeleteId !== null) {
+    if (FileManager.pendingDeleteId !== null) {
         try {
-            const response = await fetch(`/api/files/${pendingDeleteId}`, {
-                method: 'DELETE'
-        });
+            console.log(`发送删除请求: /api/files/${FileManager.pendingDeleteId}`);
+            
+            const response = await fetch(`/api/files/${FileManager.pendingDeleteId}`, {
+                method: 'DELETE',
+                credentials: 'include'
+            });
+            
+            console.log('删除响应状态:', response.status);
+            const responseText = await response.text();
+            console.log('删除响应内容:', responseText);
+            
+            let responseData;
+            try {
+                responseData = JSON.parse(responseText);
+            } catch (e) {
+                responseData = { message: responseText };
+            }
 
         if (response.ok) {
                 showToast('删除成功');
                 // 如果当前页没有内容了，且不是第一页，则回到上一页
-                if (allFiles.length <= pageSize && currentPage > 1) {
-                    currentPage--;
+                if (FileManager.allFiles.length <= FileManager.pageSize && FileManager.currentPage > 1) {
+                    FileManager.currentPage--;
                 }
                 loadFiles();
         } else {
-                showToast('删除失败', 'error');
+                showToast(`删除失败: ${responseData.error || responseData.message || '未知错误'}`, 'error');
         }
     } catch (error) {
-            showToast('删除失败', 'error');
             console.error('Delete error:', error);
+            showToast(`删除失败: ${error.message}`, 'error');
+        } finally {
+            // 关闭确认对话框
+            if (FileManager.confirmDeleteModal) {
+                FileManager.confirmDeleteModal.hide();
         }
         
         // 重置待删除项
-        pendingDeleteId = null;
-        pendingDeleteIsFolder = false;
+        FileManager.pendingDeleteId = null;
+        FileManager.pendingDeleteIsFolder = false;
+        }
     }
     // 批量删除
-    else if (pendingBatchDeleteFiles !== null) {
+    else if (FileManager.pendingBatchDeleteFiles !== null && FileManager.pendingBatchDeleteFiles.length > 0) {
+        console.log('执行批量删除:', FileManager.pendingBatchDeleteFiles);
+        
         let success = true;
-        for (const id of pendingBatchDeleteFiles) {
+        let successCount = 0;
+        let failCount = 0;
+        
+        for (const id of FileManager.pendingBatchDeleteFiles) {
             try {
+                console.log(`发送批量删除请求: /api/files/${id}`);
+                
                 const response = await fetch(`/api/files/${id}`, {
-                    method: 'DELETE'
+                    method: 'DELETE',
+                    credentials: 'include'
                 });
-                if (!response.ok) {
+                
+                console.log(`ID ${id} 删除响应状态:`, response.status);
+                
+                if (response.ok) {
+                    successCount++;
+                } else {
+                    failCount++;
                     success = false;
                 }
             } catch (error) {
+                console.error(`ID ${id} 删除错误:`, error);
+                failCount++;
                 success = false;
-                console.error('Batch delete error:', error);
             }
         }
         
         if (success) {
             showToast('批量删除成功');
+        } else if (successCount > 0) {
+            showToast(`部分文件删除成功 (${successCount}/${FileManager.pendingBatchDeleteFiles.length})`, 'warning');
     } else {
-            showToast('部分文件删除失败', 'error');
+            showToast('批量删除失败', 'error');
         }
         
         // 如果当前页将没有内容了，且不是第一页，则回到上一页
-        const remainingCount = allFiles.length - pendingBatchDeleteFiles.length;
-        const currentPageStart = (currentPage - 1) * pageSize;
-        if (remainingCount <= currentPageStart && currentPage > 1) {
-            currentPage--;
+        const remainingCount = FileManager.allFiles.length - FileManager.pendingBatchDeleteFiles.length;
+        const currentPageStart = (FileManager.currentPage - 1) * FileManager.pageSize;
+        if (remainingCount <= currentPageStart && FileManager.currentPage > 1) {
+            FileManager.currentPage--;
         }
         
         loadFiles();
         
+        // 关闭确认对话框
+        if (FileManager.confirmDeleteModal) {
+            FileManager.confirmDeleteModal.hide();
+        }
+        
         // 重置待删除项
-        pendingBatchDeleteFiles = null;
+        FileManager.pendingBatchDeleteFiles = null;
+    } else {
+        console.warn('没有指定要删除的文件');
+        if (FileManager.confirmDeleteModal) {
+            FileManager.confirmDeleteModal.hide();
+        }
     }
 }
 
@@ -1068,14 +1368,14 @@ async function deleteSelected() {
     }
     
     // 存储待删除的文件列表
-    pendingBatchDeleteFiles = selectedFiles;
+    FileManager.pendingBatchDeleteFiles = selectedFiles;
     
     // 设置确认消息
     document.getElementById('confirmDeleteMessage').textContent = 
         `确定要删除选中的 ${selectedFiles.length} 个文件/文件夹吗？`;
     
     // 显示确认对话框
-    confirmDeleteModal.show();
+    FileManager.confirmDeleteModal.show();
 }
 
 // 批量移动文件
@@ -1101,11 +1401,11 @@ async function batchMoveFiles() {
     `;
     
     // 添加到模态框
-    const modalBody = batchMoveModal._element.querySelector('.modal-body');
+    const modalBody = FileManager.batchMoveModal._element.querySelector('.modal-body');
     modalBody.appendChild(progressContainer);
     
     // 禁用确认按钮
-    const confirmBtn = batchMoveModal._element.querySelector('.modal-footer .btn-primary');
+    const confirmBtn = FileManager.batchMoveModal._element.querySelector('.modal-footer .btn-primary');
     confirmBtn.disabled = true;
     
     try {
@@ -1155,13 +1455,13 @@ async function batchMoveFiles() {
         }
         
         // 关闭模态框并刷新文件列表
-        batchMoveModal.hide();
+        FileManager.batchMoveModal.hide();
         
         // 如果当前页将没有内容了，且不是第一页，则回到上一页
-        const remainingCount = allFiles.length - selectedFiles.length;
-        const currentPageStart = (currentPage - 1) * pageSize;
-        if (remainingCount <= currentPageStart && currentPage > 1) {
-            currentPage--;
+        const remainingCount = FileManager.allFiles.length - selectedFiles.length;
+        const currentPageStart = (FileManager.currentPage - 1) * FileManager.pageSize;
+        if (remainingCount <= currentPageStart && FileManager.currentPage > 1) {
+            FileManager.currentPage--;
         }
         
         loadFiles();
@@ -1198,9 +1498,20 @@ async function searchFiles() {
             throw new Error('获取文件列表失败');
         }
         
-        const allFiles = await response.json();
-        const filteredFiles = allFiles.filter(file => 
-            file.name.toLowerCase().includes(searchTerm)
+        const data = await response.json();
+        let files = [];
+        
+        if (data.files && Array.isArray(data.files)) {
+            files = data.files;
+        } else if (Array.isArray(data)) {
+            files = data;
+        } else {
+            console.error('API返回的数据格式不正确:', data);
+            throw new Error('返回的数据格式不正确');
+        }
+        
+        const filteredFiles = files.filter(file => 
+            (file.filename || file.name || '').toLowerCase().includes(searchTerm)
         );
         
         // 更新文件列表显示
@@ -1231,17 +1542,20 @@ async function searchFiles() {
                 <td>${index + 1}</td>
                 <td style="text-align: left; padding-left: 8px;">${file.is_folder ? '📁 ' : '📄 '}${
                     file.is_folder 
-                    ? `<a href="#" class="folder-link" data-id="${file.id}" style="text-align: left;">${file.name}</a>`
-                    : `<span class="file-name" style="text-align: left; display: inline-block;">${file.name}</span>`
+                    ? `<a href="#" class="folder-link" data-id="${file.id}" title="${file.filename || file.name}" style="text-align: left;">${file.filename || file.name}</a>`
+                    : `<span class="file-name" style="text-align: left; display: inline-block;" title="${file.filename || file.name}">${file.filename || file.name}</span>`
                 }</td>
                 <td class="file-size" data-id="${file.id}" style="text-align: left;">${file.is_folder ? '计算中...' : formatSize(file.size)}</td>
                 <td style="text-align: left;">${moment(file.created_at).format('YYYY-MM-DD HH:mm:ss')}</td>
                 <td class="actions">
                     <div class="btn-group" role="group">
-                        <button class="btn btn-sm btn-warning" onclick="showRenameModal(${file.id}, '${file.name}')">重命名</button>
+                        <button class="btn btn-sm btn-warning" onclick="showRenameModal(${file.id}, '${(file.filename || file.name).replace(/'/g, "\\'")}')">重命名</button>
                         <button class="btn btn-sm btn-info text-white" onclick="showMoveModal(${file.id})">移动</button>
                         <button class="btn btn-sm btn-danger" onclick="deleteFile(${file.id}, ${file.is_folder})">删除</button>
-                        ${file.is_folder ? '' : `<button class="btn btn-sm btn-primary" onclick="openTelegramFile('${file.id}')">下载</button>`}
+                        ${file.is_folder ? '' : `
+                            ${showPreviewBtn ? `<button class="btn btn-sm btn-success" onclick="previewFile('${file.id}')"><i class="bi bi-eye"></i> 预览</button>` : ''}
+                            <button class="btn btn-sm btn-primary" onclick="openTelegramFile('${file.id}')"><i class="bi bi-download"></i> 下载</button>
+                        `}
                     </div>
                 </td>
             `;
@@ -1320,17 +1634,17 @@ function initPopovers() {
 
 // 显示重命名模态框
 function showRenameModal(id, currentName) {
-    selectedItemId = id;
+    FileManager.selectedItemId = id;
     const nameInput = document.getElementById('newName');
     nameInput.value = currentName;
     
     // 在模态框显示后聚焦到输入框并选中文本
-    renameModal._element.addEventListener('shown.bs.modal', () => {
+    FileManager.renameModal._element.addEventListener('shown.bs.modal', () => {
         nameInput.focus();
         nameInput.select();
     }, { once: true });
     
-    renameModal.show();
+    FileManager.renameModal.show();
 }
 
 // 执行重命名
@@ -1362,390 +1676,73 @@ async function renameItem() {
     }
 }
 
-// 初始化
-document.addEventListener('DOMContentLoaded', () => {
-    loadFiles();
-    
-    // 获取当前用户信息
-    fetchCurrentUser();
-    
-    // 添加搜索按钮点击事件
-    document.getElementById('fileSearchButton').addEventListener('click', searchFiles);
-    
-    // 添加搜索输入框回车事件
-    document.getElementById('fileSearchInput').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            // 触发搜索
-            searchFiles();
-        }
+// 检查登录状态
+async function checkLoginStatus() {
+  try {
+    const response = await fetch('/api/auth/status', {
+      credentials: 'include'
     });
     
-    // 文件夹树点击事件
-    document.querySelectorAll('#folderTree, #batchFolderTree').forEach(tree => {
-        tree.addEventListener('click', (e) => {
-            if (e.target.classList.contains('folder-item')) {
-                const container = e.target.closest('#folderTree, #batchFolderTree');
-                container.querySelectorAll('.folder-item').forEach(item => item.classList.remove('selected'));
-                e.target.classList.add('selected');
-            }
-        });
-    });
-
-    // 添加新建文件夹输入框的回车事件监听
-    document.getElementById('folderName').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            createFolder();
-        }
-    });
-    
-    // 添加确认删除按钮的点击事件
-    document.getElementById('confirmDeleteBtn').addEventListener('click', () => {
-        confirmDeleteModal.hide();
-        performDelete();
-    });
-    
-    // 添加退出登录按钮点击事件
-    document.getElementById('logoutBtn').addEventListener('click', logout);
-    
-    // 添加修改密码按钮点击事件
-    document.getElementById('changePasswordBtn').addEventListener('click', showChangePasswordModal);
-    
-    // 添加保存密码按钮点击事件
-    document.getElementById('savePasswordBtn').addEventListener('click', changePassword);
-    
-    // 分页控件事件监听
-    document.getElementById('prevPage').addEventListener('click', (e) => {
-        e.preventDefault();
-        if (currentPage > 1) {
-            currentPage--;
-            renderFileList();
-        }
-    });
-    
-    document.getElementById('nextPage').addEventListener('click', (e) => {
-        e.preventDefault();
-        if (currentPage < totalPages) {
-            currentPage++;
-            renderFileList();
-        }
-    });
-    
-    // 每页显示数量变更事件
-    document.getElementById('pageSize').addEventListener('change', (e) => {
-        pageSize = parseInt(e.target.value);
-        currentPage = 1; // 重置为第一页
-        renderFileList();
-        
-        // 保存用户偏好到localStorage
-        try {
-            localStorage.setItem('fileManagerPageSize', pageSize);
-        } catch (e) {
-            console.error('Failed to save page size preference:', e);
-        }
-    });
-    
-    // 从localStorage加载用户偏好的每页显示数量
-    try {
-        const savedPageSize = localStorage.getItem('fileManagerPageSize');
-        if (savedPageSize) {
-            pageSize = parseInt(savedPageSize);
-            document.getElementById('pageSize').value = pageSize;
-        }
-    } catch (e) {
-        console.error('Failed to load page size preference:', e);
+    if (!response.ok) {
+      throw new Error('会话检查失败');
     }
-
-    // 添加重命名输入框的回车事件监听
-    document.getElementById('newName').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            renameItem();
-        }
-    });
-
-    // 添加操作按钮区域左右滑动的增强功能
-    document.addEventListener('DOMContentLoaded', function() {
-        // 获取操作按钮容器
-        const actionButtonsContainer = document.querySelector('.action-buttons-container');
-        
-        if (actionButtonsContainer) {
-            // 检测是否在移动设备上
-            const isMobile = window.innerWidth <= 768;
-            
-            if (isMobile) {
-                // 添加视觉提示，指示该区域可以滚动
-                const indicator = document.createElement('div');
-                indicator.className = 'scroll-indicator';
-                indicator.innerHTML = '<span>← 滑动查看更多 →</span>';
-                indicator.style.cssText = 'text-align: center; font-size: 0.8rem; color: #6c757d; margin-top: 4px; opacity: 0.8;';
-                
-                // 将指示器添加到容器之后
-                actionButtonsContainer.parentNode.insertBefore(indicator, actionButtonsContainer.nextSibling);
-                
-                // 3秒后淡出提示
-                setTimeout(() => {
-                    indicator.style.transition = 'opacity 0.5s ease';
-                    indicator.style.opacity = '0';
-                    setTimeout(() => {
-                        indicator.remove();
-                    }, 500);
-                }, 3000);
-            }
-            
-            // 优化触摸滚动体验
-            let isDown = false;
-            let startX;
-            let scrollLeft;
-            
-            actionButtonsContainer.addEventListener('mousedown', (e) => {
-                isDown = true;
-                actionButtonsContainer.style.cursor = 'grabbing';
-                startX = e.pageX - actionButtonsContainer.offsetLeft;
-                scrollLeft = actionButtonsContainer.scrollLeft;
-            });
-            
-            actionButtonsContainer.addEventListener('mouseleave', () => {
-                isDown = false;
-                actionButtonsContainer.style.cursor = 'grab';
-            });
-            
-            actionButtonsContainer.addEventListener('mouseup', () => {
-                isDown = false;
-                actionButtonsContainer.style.cursor = 'grab';
-            });
-            
-            actionButtonsContainer.addEventListener('mousemove', (e) => {
-                if (!isDown) return;
-                e.preventDefault();
-                const x = e.pageX - actionButtonsContainer.offsetLeft;
-                const walk = (x - startX) * 2; // 滚动速度
-                actionButtonsContainer.scrollLeft = scrollLeft - walk;
-            });
-
-            // 添加触摸事件支持
-            actionButtonsContainer.addEventListener('touchstart', (e) => {
-                const touch = e.touches[0];
-                startX = touch.pageX - actionButtonsContainer.offsetLeft;
-                scrollLeft = actionButtonsContainer.scrollLeft;
-            }, { passive: true });
-
-            actionButtonsContainer.addEventListener('touchmove', (e) => {
-                if (e.touches.length !== 1) return;
-                const touch = e.touches[0];
-                const x = touch.pageX - actionButtonsContainer.offsetLeft;
-                const walk = (x - startX) * 2;
-                actionButtonsContainer.scrollLeft = scrollLeft - walk;
-                
-                // 注意：在某些浏览器中，preventDefault可能不起作用，因为passive默认为true
-                // 我们可以通过CSS来防止父元素滚动：touch-action: pan-x
-            }, { passive: true });
-
-            // 添加可视指示器，显示可滚动区域的宽度
-            const addScrollIndicator = () => {
-                // 移除现有的滚动指示器（如果有）
-                const existingScrollbar = document.querySelector('.custom-scrollbar');
-                if (existingScrollbar) {
-                    existingScrollbar.remove();
-                }
-                
-                // 只在窗口宽度小于992px时添加滚动指示器（移动端和平板）
-                const isMobileOrTablet = window.innerWidth < 992;
-                
-                // 检查是否需要滚动
-                const needsScroll = actionButtonsContainer.scrollWidth > actionButtonsContainer.clientWidth;
-                
-                if (needsScroll && isMobileOrTablet) {
-                    // 创建滚动指示器
-                    const scrollbar = document.createElement('div');
-                    scrollbar.className = 'custom-scrollbar';
-                    scrollbar.style.cssText = `
-                        height: 3px;
-                        background-color: #f0f0f0;
-                        border-radius: 3px;
-                        margin-top: 4px;
-                        margin-bottom: 8px;
-                        position: relative;
-                        width: 100%;
-                        display: block; /* 确保显示 */
-                    `;
-                    
-                    const thumb = document.createElement('div');
-                    thumb.className = 'custom-scrollbar-thumb';
-                    
-                    // 计算thumb的宽度和位置
-                    const ratio = actionButtonsContainer.clientWidth / actionButtonsContainer.scrollWidth;
-                    thumb.style.cssText = `
-                        height: 100%;
-                        background-color: #aaa;
-                        border-radius: 3px;
-                        position: absolute;
-                        left: 0;
-                        width: ${ratio * 100}%;
-                        transition: transform 0.1s ease;
-                    `;
-                    
-                    scrollbar.appendChild(thumb);
-                    actionButtonsContainer.parentNode.insertBefore(scrollbar, actionButtonsContainer.nextSibling);
-                    
-                    // 更新滚动条位置
-                    actionButtonsContainer.addEventListener('scroll', () => {
-                        const scrollRatio = actionButtonsContainer.scrollLeft / (actionButtonsContainer.scrollWidth - actionButtonsContainer.clientWidth);
-                        const maxTranslate = scrollbar.clientWidth - thumb.clientWidth;
-                        thumb.style.transform = `translateX(${scrollRatio * maxTranslate}px)`;
-                    });
-                }
-            };
-
-            // 在DOM加载完成后添加滚动指示器
-            addScrollIndicator();
-
-            // 在窗口大小改变时重新计算
-            window.addEventListener('resize', () => {
-                // 使用防抖处理，避免频繁触发
-                if (window.resizeTimeout) {
-                    clearTimeout(window.resizeTimeout);
-                }
-                window.resizeTimeout = setTimeout(() => {
-                    addScrollIndicator();
-                }, 200);
-            });
-        }
-    });
-});
-
-// 获取当前用户信息
-async function fetchCurrentUser() {
-    try {
-        const response = await fetch('/api/user');
-        
-        if (!response.ok) {
-            // 如果未登录，跳转到登录页
-            if (response.status === 401) {
-                window.location.href = '/login.html';
-                return;
-            }
-            throw new Error('Failed to fetch user info');
-        }
-        
-        const userData = await response.json();
-        
-        // 显示用户名
-        const usernameElement = document.getElementById('currentUsername');
-        if (usernameElement && userData.username) {
-            usernameElement.textContent = userData.username + ' ';
-        }
-        
-        // 用户已登录，显示内容
-        document.getElementById('loadingOverlay').style.display = 'none';
-        document.getElementById('mainContent').style.display = 'block';
-        
-        // 加载文件列表
-        await loadFiles();
-    } catch (error) {
-        console.error('Error fetching user info:', error);
-        // 发生错误时也跳转到登录页
+    
+    const data = await response.json();
+    if (!data.loggedIn) {
+      // 只有在当前页面不是登录页时才跳转
+      if (!window.location.pathname.includes('login.html')) {
         window.location.href = '/login.html';
-    }
-}
-
-// 退出登录
-async function logout() {
-    try {
-        const response = await fetch('/api/logout', {
-            method: 'POST'
-        });
-        
-        if (response.ok) {
-            window.location.href = '/login.html';
-        } else {
-            showToast('退出失败，请重试', 'error');
-        }
-    } catch (error) {
-        console.error('Logout error:', error);
-        showToast('退出失败，请重试', 'error');
-    }
-}
-
-// 显示修改密码模态框
-function showChangePasswordModal() {
-    // 重置表单
-    document.getElementById('changePasswordForm').reset();
-    
-    // 显示模态框
-    const changePasswordModal = new bootstrap.Modal(document.getElementById('changePasswordModal'));
-    changePasswordModal.show();
-}
-
-// 修改密码
-async function changePassword() {
-    const currentPassword = document.getElementById('currentPassword').value;
-    const newPassword = document.getElementById('newPassword').value;
-    const confirmPassword = document.getElementById('confirmPassword').value;
-    
-    // 验证密码
-    if (!currentPassword) {
-        showToast('请输入当前密码', 'error');
-        return;
+      }
+      return false;
     }
     
-    if (!newPassword) {
-        showToast('请输入新密码', 'error');
-        return;
+    // 更新用户信息显示
+    const userInfo = document.getElementById('userInfo');
+    if (userInfo) {
+      userInfo.textContent = `欢迎, ${data.user.username}`;
     }
     
-    if (newPassword !== confirmPassword) {
-        showToast('两次输入的新密码不一致', 'error');
-        return;
+    return true; // 返回登录状态
+  } catch (error) {
+    console.error('检查登录状态失败:', error);
+    // 只有在当前页面不是登录页时才跳转
+    if (!window.location.pathname.includes('login.html')) {
+      window.location.href = '/login.html';
     }
-    
-    // 禁用按钮防止重复提交
-    const saveBtn = document.getElementById('savePasswordBtn');
-    const originalText = saveBtn.textContent;
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 保存中...';
-    
-    try {
-        const response = await fetch('/api/change-password', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                currentPassword,
-                newPassword
-            })
-        });
-        
-            const data = await response.json();
-        
-        if (response.ok && data.success) {
-            showToast('密码修改成功');
-            const changePasswordModal = bootstrap.Modal.getInstance(document.getElementById('changePasswordModal'));
-            changePasswordModal.hide();
-        } else {
-            showToast(data.error || '密码修改失败', 'error');
-        }
-    } catch (error) {
-        console.error('Error changing password:', error);
-        showToast('密码修改失败，请稍后重试', 'error');
-    } finally {
-        // 恢复按钮状态
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = originalText;
-    }
+    return false;
+  }
 }
 
 // 打开Telegram文件
-function openTelegramFile(fileId) {
-    if (!fileId) {
-        showToast('无效的文件链接', 'error');
-        return;
+async function openTelegramFile(fileId) {
+    try {
+        // 获取文件信息
+        const file = FileManager.allFiles.find(f => String(f.id) === String(fileId));
+        if (!file) {
+            throw new Error('文件不存在');
+        }
+        
+        // 获取消息ID
+        const messageId = file.message_id || (file.tg_file_id && file.tg_file_id.includes(':') ? file.tg_file_id.split(':')[1] : null);
+        if (!messageId) {
+            throw new Error('无法获取消息ID');
+        }
+        
+        // 尝试构建电报链接（t.me或直接获取文件）
+        const chatId = file.file_id && file.file_id.includes(':') ? file.file_id.split(':')[0] : null;
+        if (chatId) {
+            // 构建Telegram链接
+            const url = `https://t.me/c/${chatId.replace('-100', '')}/${messageId}`;
+            window.open(url, '_blank');
+        } else {
+            // 回退到直接下载
+            const encodedFileName = encodeURIComponent(file.filename || file.name || '');
+            window.open(`/proxy/${fileId}?original_name=${encodedFileName}`, '_blank');
+        }
+    } catch (error) {
+        console.error('打开Telegram文件失败:', error);
+        showToast('打开Telegram文件失败: ' + error.message, 'error');
     }
-
-    // 在新窗口中打开下载链接
-    window.open(`/api/files/download/${fileId}`, '_blank');
 }
 
 // 复制文本到剪贴板
@@ -1765,4 +1762,367 @@ function copyToClipboard(elementId) {
                 showToast('复制失败，请手动复制', 'error');
             });
     }
-} 
+}
+
+// 设置每页显示数量
+function setPageSize(size) {
+  size = parseInt(size, 10);
+  if (isNaN(size) || size < 1) return;
+  
+  // 记住当前页的起始位置
+  const currentStart = (currentPage - 1) * pageSize;
+  
+  // 更新每页显示数量
+  pageSize = size;
+  
+  // 更新当前页码以保持相同的起始位置
+  currentPage = Math.floor(currentStart / pageSize) + 1;
+  
+  // 重新渲染文件列表
+            renderFileList();
+  
+  // 保存设置到本地存储
+  localStorage.setItem('pageSize', pageSize);
+  
+  console.log('页面大小已更新:', {pageSize, currentPage});
+}
+
+// 页面初始化函数
+async function initPage() {
+  try {
+    console.log('页面初始化开始...');
+    
+    // 从本地存储中恢复页面大小设置
+    const savedPageSize = localStorage.getItem('pageSize');
+        if (savedPageSize) {
+      pageSize = parseInt(savedPageSize, 10);
+      
+      // 更新选择框的值
+      const pageSizeSelect = document.getElementById('pageSize');
+      if (pageSizeSelect) {
+        pageSizeSelect.value = pageSize;
+      }
+    }
+    
+    // 为页面大小选择器添加事件监听
+    const pageSizeSelect = document.getElementById('pageSize');
+    if (pageSizeSelect) {
+      pageSizeSelect.addEventListener('change', (e) => {
+        setPageSize(e.target.value);
+      });
+    }
+    
+    // 添加搜索按钮和输入框的事件监听
+    const searchButton = document.getElementById('fileSearchButton');
+    const searchInput = document.getElementById('fileSearchInput');
+    
+    if (searchButton) {
+      searchButton.addEventListener('click', searchFiles);
+      console.log('搜索按钮事件已绑定');
+    }
+    
+    if (searchInput) {
+      searchInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          searchFiles();
+        }
+      });
+      console.log('搜索输入框事件已绑定');
+    }
+    
+    // 添加修改密码按钮事件监听
+    const changePasswordBtn = document.getElementById('changePasswordBtn');
+    if (changePasswordBtn) {
+      changePasswordBtn.addEventListener('click', () => {
+        const changePasswordModal = new bootstrap.Modal(document.getElementById('changePasswordModal'));
+        changePasswordModal.show();
+      });
+      console.log('修改密码按钮事件已绑定');
+    }
+    
+    // 添加退出登录按钮事件监听
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', logout);
+      console.log('退出登录按钮事件已绑定');
+    }
+    
+    // 添加保存密码按钮事件监听
+    const savePasswordBtn = document.getElementById('savePasswordBtn');
+    if (savePasswordBtn) {
+      savePasswordBtn.addEventListener('click', changePassword);
+      console.log('保存密码按钮事件已绑定');
+    }
+    
+    // 先检查登录状态
+    const isLoggedIn = await checkLoginStatus();
+    
+    if (!isLoggedIn) {
+      console.log('用户未登录，不加载文件列表');
+                return;
+    }
+    
+    // 在主页时加载文件列表
+    if (window.location.pathname.includes('index.html') || window.location.pathname === '/' || window.location.pathname === '') {
+      console.log('页面初始化中，加载文件列表...');
+      await loadFiles();
+        }
+    } catch (error) {
+    console.error('页面初始化错误:', error);
+    }
+}
+
+// 退出登录
+async function logout() {
+    try {
+    console.log('执行退出登录操作');
+    const response = await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    // 只显示一次提示
+    showToast('退出登录中...');
+    
+    // 清除Cookie
+    document.cookie = 'session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+    
+    // 延迟跳转，让用户看到提示
+    setTimeout(() => {
+            window.location.href = '/login.html';
+    }, 1000);
+    } catch (error) {
+    console.error('退出登录错误:', error);
+    // 清除Cookie并跳转
+    document.cookie = 'session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+    window.location.href = '/login.html';
+  }
+}
+
+// 修改密码
+async function changePassword() {
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    
+  // 检查密码是否符合要求
+    if (!currentPassword) {
+        showToast('请输入当前密码', 'error');
+        return;
+    }
+    
+    if (!newPassword) {
+        showToast('请输入新密码', 'error');
+        return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+        showToast('两次输入的新密码不一致', 'error');
+        return;
+    }
+    
+  try {
+    const response = await fetch('/api/auth/change-password', {
+            method: 'POST',
+      credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                currentPassword,
+                newPassword
+            })
+        });
+        
+            const data = await response.json();
+        
+    if (response.ok) {
+            showToast('密码修改成功');
+      // 隐藏模态框
+            const changePasswordModal = bootstrap.Modal.getInstance(document.getElementById('changePasswordModal'));
+            changePasswordModal.hide();
+      // 重置表单
+      document.getElementById('changePasswordForm').reset();
+        } else {
+            showToast(data.error || '密码修改失败', 'error');
+        }
+    } catch (error) {
+    console.error('修改密码错误:', error);
+    showToast('修改密码失败，请重试', 'error');
+  }
+}
+
+// 更新分页信息
+function updatePagination(totalItems) {
+    try {
+        // 计算总页数
+        FileManager.totalPages = Math.ceil(totalItems / FileManager.pageSize) || 1;
+        
+        // 确保当前页在有效范围内
+        if (FileManager.currentPage > FileManager.totalPages) {
+            FileManager.currentPage = FileManager.totalPages;
+        } else if (FileManager.currentPage < 1) {
+            FileManager.currentPage = 1;
+        }
+        
+        // 根据是否需要分页来显示或隐藏分页控件
+        const paginationElement = document.getElementById('pagination');
+        
+        if (!paginationElement) {
+            console.warn('分页元素不存在');
+            return;
+        }
+
+        const pageInfoElement = document.getElementById('pageInfo');
+        
+        if (totalItems > FileManager.pageSize) {
+            // 显示分页控件
+            paginationElement.style.cssText = 'display: block !important';
+            if (pageInfoElement) {
+                pageInfoElement.textContent = `${FileManager.currentPage} / ${FileManager.totalPages}`;
+            }
+            
+            // 更新上一页和下一页按钮状态
+            const prevButton = document.getElementById('prevPage');
+            const nextButton = document.getElementById('nextPage');
+            
+            if (prevButton) {
+                prevButton.parentElement.classList.toggle('disabled', FileManager.currentPage <= 1);
+            }
+            
+            if (nextButton) {
+                nextButton.parentElement.classList.toggle('disabled', FileManager.currentPage >= FileManager.totalPages);
+            }
+        } else {
+            // 隐藏分页控件
+            paginationElement.style.cssText = 'display: none !important';
+        }
+        
+        console.log('分页信息已更新:', {
+            currentPage: FileManager.currentPage,
+            totalPages: FileManager.totalPages,
+            pageSize: FileManager.pageSize,
+            totalItems
+        });
+    } catch (error) {
+        console.error('更新分页信息出错:', error);
+    }
+}
+
+// 页面加载时执行初始化
+let hasInitialized = false;
+document.addEventListener('DOMContentLoaded', () => {
+    if (!hasInitialized) {
+        initPage();
+        hasInitialized = true;
+    }
+});
+
+// 定期检查登录状态（每5分钟）
+setInterval(checkLoginStatus, 5 * 60 * 1000);
+
+// 预览文件
+async function previewFile(fileId) {
+    try {
+        console.log('预览文件，文件ID:', fileId, '类型:', typeof fileId);
+        console.log('当前文件列表:', FileManager.allFiles);
+        
+        // 确保fileId是字符串类型
+        const fileIdStr = String(fileId);
+        
+        // 获取文件信息
+        const fileInfo = FileManager.allFiles.find(file => String(file.id) === fileIdStr);
+        console.log('找到的文件信息:', fileInfo);
+        
+        if (!fileInfo) {
+            // 尝试从服务器获取文件信息
+            try {
+                console.log('本地未找到文件信息，尝试从服务器获取');
+                const response = await fetch(`/api/files/${fileIdStr}`);
+                if (response.ok) {
+                    const fileData = await response.json();
+                    console.log('从服务器获取的文件信息:', fileData);
+                    
+                    // 构建预览URL
+                    const encodedFileName = encodeURIComponent(fileData.filename || fileData.name || '');
+                    let previewUrl;
+                    
+                    // 对于图片、音频和视频文件，使用代理
+                    if (fileData.mime_type && (
+                        fileData.mime_type.startsWith('image/') ||
+                        fileData.mime_type.startsWith('audio/') ||
+                        fileData.mime_type.startsWith('video/')
+                    )) {
+                        previewUrl = `/proxy/${fileIdStr}?original_name=${encodedFileName}`;
+                        
+                        // 对于图片，添加 Content-Disposition: inline
+                        if (fileData.mime_type.startsWith('image/')) {
+                            previewUrl += '&disposition=inline';
+                        }
+                        
+                        // 对于音频和视频，使用 HTML5 播放器页面
+                        if (fileData.mime_type.startsWith('audio/') || fileData.mime_type.startsWith('video/')) {
+                            // 使用绝对路径，避免相对路径问题
+                            const playerUrl = new URL(window.location.origin);
+                            playerUrl.pathname = `/proxy/${fileIdStr}`;
+                            playerUrl.search = `?player=1&original_name=${encodedFileName}`;
+                            window.open(playerUrl.toString(), '_blank');
+                            return;
+                        }
+                    } else {
+                        // 对于其他类型的文件，直接使用原始路径
+                        previewUrl = `/api/files/${fileIdStr}/download`;
+                    }
+                    
+                    // 打开新窗口预览文件
+                    window.open(previewUrl, '_blank');
+                    return;
+                }
+            } catch (serverError) {
+                console.error('从服务器获取文件信息失败:', serverError);
+            }
+            
+            throw new Error('文件不存在');
+        }
+        
+        // 构建预览URL
+        const encodedFileName = encodeURIComponent(fileInfo.filename || fileInfo.name || '');
+        let previewUrl;
+        
+        // 对于图片、音频和视频文件，使用代理
+        if (fileInfo.mime_type && (
+            fileInfo.mime_type.startsWith('image/') ||
+            fileInfo.mime_type.startsWith('audio/') ||
+            fileInfo.mime_type.startsWith('video/')
+        )) {
+            previewUrl = `/proxy/${fileIdStr}?original_name=${encodedFileName}`;
+            
+            // 对于图片，添加 Content-Disposition: inline
+            if (fileInfo.mime_type.startsWith('image/')) {
+                previewUrl += '&disposition=inline';
+            }
+            
+            // 对于音频和视频，使用 HTML5 播放器页面
+            if (fileInfo.mime_type.startsWith('audio/') || fileInfo.mime_type.startsWith('video/')) {
+                // 使用绝对路径，避免相对路径问题
+                const playerUrl = new URL(window.location.origin);
+                playerUrl.pathname = `/proxy/${fileIdStr}`;
+                playerUrl.search = `?player=1&original_name=${encodedFileName}`;
+                window.open(playerUrl.toString(), '_blank');
+                return;
+            }
+        } else {
+            // 对于其他类型的文件，直接使用原始路径
+            previewUrl = `/api/files/${fileIdStr}/download`;
+        }
+        
+        // 打开新窗口预览文件
+        window.open(previewUrl, '_blank');
+    } catch (error) {
+        console.error('预览文件失败:', error);
+        alert('预览文件失败: ' + error.message);
+    }
+}

@@ -1,0 +1,191 @@
+/* 自定义样式 */
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .system-title {
+    font-size: 20px;
+    margin: 10px 0;
+  }
+  
+  .actions .btn-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  
+  .actions .btn {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.4rem;
+    white-space: nowrap;
+  }
+  
+  .table th, .table td {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  
+  .search-container {
+    min-width: 180px;
+    max-width: 100%;
+    margin-right: 0;
+  }
+  
+  .overflow-auto {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
+  }
+  
+  .overflow-auto::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+  }
+  
+  .btn-group.responsive {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  
+  .btn-group.responsive .btn {
+    margin-bottom: 5px;
+  }
+  
+  .user-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  
+  /* 确保按钮在移动端有足够触摸区域 */
+  .btn {
+    min-height: 38px;
+  }
+}
+
+/* 搜索框样式优化 */
+.search-container {
+  margin-right: 10px;
+  min-width: 200px;
+}
+
+.search-container .input-group {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.search-container .form-control:focus {
+  box-shadow: none;
+  border-color: #0d6efd;
+}
+
+/* 按钮悬停效果 */
+.btn-primary:hover {
+  background-color: #0a58ca;
+}
+
+.btn-danger:hover {
+  background-color: #bb2d3b;
+}
+
+.btn-info:hover {
+  background-color: #0dcaf0;
+}
+
+.btn-outline-secondary:hover {
+  background-color: #6c757d;
+  color: white;
+}
+
+/* 列表项效果 */
+.table tbody tr:hover {
+  background-color: rgba(13, 110, 253, 0.05);
+}
+
+/* 确保横向滚动条显示美观 */
+.overflow-auto {
+  padding-bottom: 5px;
+  mask-image: linear-gradient(to right, black 90%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black 90%, transparent 100%);
+}
+
+/* 导航和面包屑样式 */
+.breadcrumb {
+  margin-bottom: 0;
+  padding: 0.5rem 0;
+}
+
+.breadcrumb-item a {
+  color: #0d6efd;
+  text-decoration: none;
+}
+
+.breadcrumb-item a:hover {
+  text-decoration: underline;
+}
+
+/* 改进排序图标显示 */
+.sortable::after {
+  transition: opacity 0.2s ease;
+}
+
+.sortable:hover::after {
+  opacity: 1 !important;
+}
+
+/* 按钮组样式优化，确保按钮在一行显示 */
+.btn-group {
+  display: inline-flex;
+  flex-wrap: nowrap !important;
+  white-space: nowrap;
+  width: auto;
+}
+
+.btn-group .btn {
+  margin-right: 2px;
+  flex-shrink: 0;
+}
+
+/* 自定义toast关闭按钮样式 */
+.toast-with-close .toast-close {
+  color: white;
+  font-size: 20px;
+  font-weight: bold;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0.8;
+  margin-left: 10px;
+  padding: 0 5px;
+  transition: opacity 0.2s;
+}
+
+.toast-with-close .toast-close:hover {
+  opacity: 1;
+}
+
+/* 确保toast消息换行正确显示 */
+.toastify {
+  white-space: pre-line !important;
+  max-width: 500px !important;
+}
+
+/* 文件名宽度控制和省略号 */
+.file-name, .folder-link {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+/* 列宽度调整 */
+.col-name {
+  width: 30% !important;
+}
+
+.col-actions {
+  width: 25% !important;
+}
+
+.col-size, .col-date {
+  width: 15% !important;
+} 
