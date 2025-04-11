@@ -1344,7 +1344,12 @@ async function deleteFile(id, isFolder) {
                     console.error('删除失败:', error);
                     showToast(`删除失败: ${error.message}`, 'error');
                 } finally {
+                    // 确保在任何情况下都重置状态
                     FileManager.pendingDeleteId = null;
+                    // 如果模态框仍然显示，则关闭它
+                    if (FileManager.confirmDeleteModal && FileManager.confirmDeleteModal._element.classList.contains('show')) {
+                        FileManager.confirmDeleteModal.hide();
+                    }
                 }
             };
             console.log('已重新绑定确认删除按钮点击事件');
@@ -1373,7 +1378,8 @@ async function performDelete(fileId) {
             method: 'DELETE',
             headers: {
                 'Accept': 'application/json'
-            }
+            },
+            credentials: 'include'  // 添加这一行确保请求包含cookie
         });
         
         console.log('删除请求响应:', {
@@ -1518,7 +1524,12 @@ async function deleteSelected() {
                 console.error('批量删除失败:', error);
                 showToast(`批量删除失败: ${error.message}`, 'error');
             } finally {
+                // 确保在任何情况下都重置状态
                 FileManager.pendingBatchDeleteFiles = null;
+                // 如果模态框仍然显示，则关闭它
+                if (FileManager.confirmDeleteModal && FileManager.confirmDeleteModal._element.classList.contains('show')) {
+                    FileManager.confirmDeleteModal.hide();
+                }
             }
         };
         console.log('已重新绑定确认删除按钮点击事件');
