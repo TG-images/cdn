@@ -129,16 +129,7 @@ function formatSize(bytes) {
     if (bytes === 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-// 格式化文件大小
-function formatFileSize(bytes) {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const i = Math.floor(Math.log(Math.abs(bytes)) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
@@ -252,36 +243,51 @@ function calculateFolderSizeLocally(folderId) {
 // 加载文件列表
 async function loadFiles(path = '') {
     try {
+        console.log('开始加载文件列表:', { path, currentFolderId: FileManager.currentFolderId });
+        
         // 显示加载状态
         const fileList = document.getElementById('fileList');
-        fileList.innerHTML = '<tr><td colspan="6" class="text-center">加载中...</td></tr>';
+        if (!fileList) {
+            throw new Error('找不到文件列表元素');
+        }
+        
+        fileList.innerHTML = '<tr><td colspan="6" class="text-center"><div class="p-3"><i class="bi bi-arrow-clockwise"></i> 加载中...</div></td></tr>';
         
         // 获取文件列表
         const response = await fetch(`/api/files?parent_id=${FileManager.currentFolderId || ''}`);
+        console.log('API响应状态:', response.status);
+        
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
+        
         const data = await response.json();
+        console.log('API返回数据:', data);
         
         if (!data.success) {
             throw new Error(data.error || '获取文件列表失败');
         }
 
         // 保存所有文件数据
-        FileManager.allFiles = data.files.map(file => {
-            // 确保每个文件对象都有必要的属性
-            return {
-                id: file.id,
-                filename: file.filename || '未命名',
-                file_id: file.file_id,
-                message_id: file.message_id,
-                parent_id: file.parent_id,
-                is_folder: file.is_folder || false,
-                size: file.file_size || 0,
-                mime_type: file.mime_type,
-                created_at: file.created_at
-            };
-        });
+        FileManager.allFiles = data.files.map(file => ({
+            id: file.id,
+            filename: file.filename || '未命名',
+            file_id: file.file_id,
+            message_id: file.message_id,
+            parent_id: file.parent_id,
+            is_folder: file.is_folder || false,
+            size: parseInt(file.file_size || 0, 10),
+            mime_type: file.mime_type,
+            created_at: file.created_at
+        }));
+
+        // 初始化过滤后的文件列表
+        FileManager.filteredFiles = [...FileManager.allFiles];
+        
+        // 应用当前的排序
+        if (FileManager.sortField && FileManager.sortOrder) {
+            FileManager.filteredFiles = sortFiles(FileManager.filteredFiles, FileManager.sortField, FileManager.sortOrder);
+        }
 
         // 更新当前路径
         FileManager.currentPath = path;
@@ -295,76 +301,145 @@ async function loadFiles(path = '') {
         // 更新文件统计信息
         updateFileStats();
         
+        console.log('文件列表加载完成:', {
+            totalFiles: FileManager.allFiles.length,
+            filteredFiles: FileManager.filteredFiles.length,
+            currentPath: path
+        });
+        
     } catch (error) {
         console.error('加载文件列表失败:', error);
-        const fileList = document.getElementById('fileList');
-        fileList.innerHTML = `<tr><td colspan="6" class="text-center text-danger">加载文件列表失败: ${error.message}</td></tr>`;
+        if (fileList) {
+            fileList.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center text-danger">
+                        <div class="p-3">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            加载文件列表失败: ${error.message}
+                        </div>
+                    </td>
+                </tr>`;
+        }
+        showToast(`加载文件列表失败: ${error.message}`, 'error');
     }
 }
 
 // 排序文件
 function sortFiles(files, field = 'name', order = 'asc') {
-    const sortedFiles = [...files];
-    
-    sortedFiles.sort((a, b) => {
-        // 确保文件夹始终在最上方
+    try {
+        console.log('开始排序文件:', { field, order, filesCount: files.length });
+        
+        if (!Array.isArray(files)) {
+            console.error('files参数不是数组');
+            return [];
+        }
+        
+        const sortedFiles = [...files];
+        
+        sortedFiles.sort((a, b) => {
+            // 确保文件夹始终在最上方
             if (a.is_folder !== b.is_folder) {
-            return b.is_folder - a.is_folder;
-        }
+                return b.is_folder - a.is_folder;
+            }
+            
+            // 根据不同字段进行排序
+            let valueA, valueB;
+            
+            switch (field) {
+                case 'name':
+                    valueA = a.filename || '';
+                    valueB = b.filename || '';
+                    break;
+                    
+                case 'size':
+                    valueA = parseInt(a.size || 0, 10);
+                    valueB = parseInt(b.size || 0, 10);
+                    break;
+                    
+                case 'created_at':
+                    valueA = new Date(a.created_at || 0).getTime();
+                    valueB = new Date(b.created_at || 0).getTime();
+                    break;
+                    
+                default:
+                    console.warn('未知的排序字段:', field);
+                    return 0;
+            }
+            
+            // 如果值相等，则按名称排序
+            if (valueA === valueB) {
+                return a.filename.localeCompare(b.filename);
+            }
+            
+            // 根据排序顺序返回结果
+            if (field === 'name') {
+                return order === 'asc' ? 
+                    valueA.localeCompare(valueB) : 
+                    valueB.localeCompare(valueA);
+            } else {
+                return order === 'asc' ? 
+                    (valueA < valueB ? -1 : 1) : 
+                    (valueA > valueB ? -1 : 1);
+            }
+        });
         
-        // 如果是文件夹，则按名称排序
-        if (a.is_folder && b.is_folder) {
-            return a.name.localeCompare(b.name);
-        }
-        
-        // 其他情况按指定字段排序
-        let valueA = a[field];
-        let valueB = b[field];
-        
-        if (field === 'size') {
-            valueA = a.is_folder ? FileManager.folderSizeCache[a.id] || 0 : a.size;
-            valueB = b.is_folder ? FileManager.folderSizeCache[b.id] || 0 : b.size;
-        }
-        
-        if (valueA === valueB) return 0;
-        return order === 'asc' ? 
-            (valueA < valueB ? -1 : 1) : 
-            (valueA > valueB ? -1 : 1);
-    });
-    
-    return sortedFiles;
+        console.log('文件排序完成，排序后文件数:', sortedFiles.length);
+        return sortedFiles;
+    } catch (error) {
+        console.error('文件排序出错:', error);
+        return files;
+    }
 }
 
 // 处理排序点击事件
 function handleSort(field) {
-    if (FileManager.currentSortField === field) {
+    console.log('处理排序:', { field, currentField: FileManager.sortField, currentOrder: FileManager.sortOrder });
+    
+    if (FileManager.sortField === field) {
         // 如果点击的是当前排序字段，切换排序顺序
-        FileManager.currentSortOrder = FileManager.currentSortOrder === 'asc' ? 'desc' : 'asc';
-        } else {
+        FileManager.sortOrder = FileManager.sortOrder === 'asc' ? 'desc' : 'asc';
+    } else {
         // 如果点击的是新字段，设置为升序
-        FileManager.currentSortField = field;
-        FileManager.currentSortOrder = 'asc';
+        FileManager.sortField = field;
+        FileManager.sortOrder = 'asc';
     }
     
     // 更新排序图标
     updateSortIcon();
     
-    // 重新渲染文件列表
-    renderFileList();
+    // 对过滤后的文件列表进行排序
+    if (FileManager.filteredFiles) {
+        FileManager.filteredFiles = sortFiles(FileManager.filteredFiles, FileManager.sortField, FileManager.sortOrder);
+        // 重新渲染文件列表
+        renderFileList();
+    }
+    
+    console.log('排序完成:', { 
+        field: FileManager.sortField, 
+        order: FileManager.sortOrder,
+        filesCount: FileManager.filteredFiles?.length 
+    });
 }
 
 // 更新排序图标
 function updateSortIcon() {
     // 移除所有列的排序图标
-    document.querySelectorAll('th .sort-icon').forEach(icon => icon.remove());
+    document.querySelectorAll('th[data-sort] .sort-icon').forEach(icon => {
+        icon.parentElement.removeChild(icon);
+    });
     
     // 添加当前排序列的图标
-    const th = document.querySelector(`th[data-sort="${FileManager.currentSortField}"]`);
+    const th = document.querySelector(`th[data-sort="${FileManager.sortField}"]`);
     if (th) {
         const icon = document.createElement('span');
         icon.className = 'sort-icon ms-1';
-        icon.innerHTML = FileManager.currentSortOrder === 'asc' ? '↑' : '↓';
+        icon.innerHTML = FileManager.sortOrder === 'asc' ? '↑' : '↓';
         th.appendChild(icon);
+        
+        // 更新所有排序列的状态
+        document.querySelectorAll('th[data-sort]').forEach(header => {
+            header.classList.toggle('active', header === th);
+        });
     }
 }
 
@@ -379,9 +454,18 @@ function renderFileList() {
     // 清空现有内容
     fileList.innerHTML = '';
     
-    // 确保有文件要显示
+    // 如果没有文件显示提示信息
     if (!FileManager.filteredFiles || FileManager.filteredFiles.length === 0) {
-        fileList.innerHTML = '<tr><td colspan="6" class="text-center">当前文件夹为空</td></tr>';
+        const emptyRow = document.createElement('tr');
+        emptyRow.innerHTML = `
+            <td colspan="6" class="text-center">
+                <div class="p-3">
+                    <i class="bi bi-folder2-open me-2"></i>
+                    当前文件夹为空
+                </div>
+            </td>
+        `;
+        fileList.appendChild(emptyRow);
         updateFileStats();
         return;
     }
@@ -389,145 +473,48 @@ function renderFileList() {
     // 计算当前页的文件范围
     const startIndex = (FileManager.currentPage - 1) * FileManager.pageSize;
     const endIndex = Math.min(startIndex + FileManager.pageSize, FileManager.filteredFiles.length);
-    const filesToShow = FileManager.filteredFiles.slice(startIndex, endIndex);
-    
-    console.log('准备显示文件，数量:', filesToShow.length);
+    const currentPageFiles = FileManager.filteredFiles.slice(startIndex, endIndex);
     
     // 渲染文件列表
-    let index = startIndex + 1;
-    filesToShow.forEach(file => {
-        const row = document.createElement('tr');
-        row.dataset.id = file.id;
-        row.dataset.isFolder = file.is_folder;
-        
-        // 添加复选框
-        const checkboxCell = document.createElement('td');
-        checkboxCell.className = 'col-checkbox';
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.className = 'form-check-input';
-        checkbox.value = file.id;
-        checkbox.onclick = (e) => e.stopPropagation();
-        checkboxCell.appendChild(checkbox);
-        row.appendChild(checkboxCell);
-
-        // 添加序号
-        const numberCell = document.createElement('td');
-        numberCell.className = 'col-number';
-        numberCell.textContent = index++;
-        row.appendChild(numberCell);
-
-        // 添加名称
-        const nameCell = document.createElement('td');
-        nameCell.className = 'col-name';
-        const nameDiv = document.createElement('div');
-        nameDiv.className = 'd-flex align-items-center';
-        
-        const icon = document.createElement('i');
-        icon.className = file.is_folder ? 'bi bi-folder me-2' : 'bi bi-file-earmark me-2';
-        nameDiv.appendChild(icon);
-        
-        const nameSpan = document.createElement('span');
-        if (file.is_folder) {
-            const folderLink = document.createElement('a');
-            folderLink.href = '#';
-            folderLink.textContent = file.filename;
-            folderLink.onclick = (e) => {
-                e.preventDefault();
-                FileManager.currentFolderId = file.id;
-                FileManager.currentPage = 1;
-                loadFiles();
-            };
-            nameSpan.appendChild(folderLink);
-        } else {
-            nameSpan.textContent = file.filename;
-        }
-        nameDiv.appendChild(nameSpan);
-        
-        nameCell.appendChild(nameDiv);
-        row.appendChild(nameCell);
-
-        // 添加大小
-        const sizeCell = document.createElement('td');
-        sizeCell.className = 'col-size';
-        if (file.is_folder) {
-            const size = FileManager.folderSizeCache[file.id] !== undefined ? 
-                FileManager.folderSizeCache[file.id] : 0;
-            sizeCell.textContent = formatSize(size);
-        } else {
-            sizeCell.textContent = formatSize(file.size || 0);
-        }
-        row.appendChild(sizeCell);
-
-        // 添加日期
-        const dateCell = document.createElement('td');
-        dateCell.className = 'col-date';
-        dateCell.textContent = moment(file.created_at).format('YYYY-MM-DD HH:mm:ss');
-        row.appendChild(dateCell);
-
-        // 添加操作按钮
-        const actionsCell = document.createElement('td');
-        actionsCell.className = 'col-actions';
-        const btnGroup = document.createElement('div');
-        btnGroup.className = 'btn-group';
-        
-        if (file.is_folder) {
-            const openBtn = document.createElement('button');
-            openBtn.className = 'btn btn-sm btn-outline-primary';
-            openBtn.innerHTML = '<i class="bi bi-folder2-open me-1"></i>打开';
-            openBtn.title = '打开文件夹';
-            openBtn.onclick = () => {
-                FileManager.currentFolderId = file.id;
-                FileManager.currentPage = 1;
-                loadFiles();
-            };
-            btnGroup.appendChild(openBtn);
-        } else {
-            const previewBtn = document.createElement('button');
-            previewBtn.className = 'btn btn-sm btn-outline-primary';
-            previewBtn.innerHTML = '<i class="bi bi-eye me-1"></i>预览';
-            previewBtn.title = '预览';
-            previewBtn.onclick = () => previewFile(file.id);
-            btnGroup.appendChild(previewBtn);
-        }
-
-        const renameBtn = document.createElement('button');
-        renameBtn.className = 'btn btn-sm btn-outline-secondary';
-        renameBtn.innerHTML = '<i class="bi bi-pencil me-1"></i>重命名';
-        renameBtn.title = '重命名';
-        renameBtn.onclick = () => showRenameModal(file);
-        btnGroup.appendChild(renameBtn);
-
-        const moveBtn = document.createElement('button');
-        moveBtn.className = 'btn btn-sm btn-outline-info';
-        moveBtn.innerHTML = '<i class="bi bi-arrows-move me-1"></i>移动';
-        moveBtn.title = '移动';
-        moveBtn.onclick = () => showMoveModal([file]);
-        btnGroup.appendChild(moveBtn);
-
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'btn btn-sm btn-outline-danger';
-        deleteBtn.innerHTML = '<i class="bi bi-trash me-1"></i>删除';
-        deleteBtn.title = '删除';
-        deleteBtn.onclick = () => {
-            const modal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
-            document.getElementById('confirmDeleteMessage').textContent = `确定要删除 ${file.filename} 吗？`;
-            document.getElementById('confirmDeleteBtn').onclick = () => {
-                deleteFile(file.id);
-                modal.hide();
-            };
-            modal.show();
-        };
-        btnGroup.appendChild(deleteBtn);
-
-        actionsCell.appendChild(btnGroup);
-        row.appendChild(actionsCell);
-
-        fileList.appendChild(row);
+    currentPageFiles.forEach((file, index) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><input type="checkbox" class="file-checkbox" data-id="${file.id}"></td>
+            <td>${startIndex + index + 1}</td>
+            <td>
+                ${file.is_folder ? 
+                    `<i class="bi bi-folder me-2"></i>
+                     <a href="#" onclick="loadFiles('${file.id}'); return false;">${file.filename}</a>` : 
+                    `<i class="bi bi-file-earmark me-2"></i>${file.filename}`}
+            </td>
+            <td>${formatSize(file.size || 0)}</td>
+            <td>${moment(file.created_at).format('YYYY-MM-DD HH:mm:ss')}</td>
+            <td>
+                <div class="btn-group">
+                    ${!file.is_folder ? 
+                        `<button class="btn btn-sm btn-outline-primary" onclick="openTelegramFile('${file.file_id}')" title="下载">
+                            <i class="bi bi-download"></i>
+                        </button>` : ''}
+                    <button class="btn btn-sm btn-outline-secondary" onclick="showRenameModal('${file.id}', '${file.filename}')" title="重命名">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-info" onclick="showMoveModal('${file.id}')" title="移动">
+                        <i class="bi bi-folder-symlink"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteFile('${file.id}', ${file.is_folder})" title="删除">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </td>
+        `;
+        fileList.appendChild(tr);
     });
-
+    
     // 更新文件统计信息
     updateFileStats();
+    
+    // 更新分页信息
+    updatePagination(FileManager.filteredFiles.length);
 }
 
 // 更新面包屑
@@ -1656,119 +1643,100 @@ function setPageSize(size) {
 
 // 页面初始化函数
 async function initPage() {
-  try {
-    console.log('页面初始化开始...');
-    
-    // 初始化Modal
-    initializeModals();
-    
-    // 初始化FileManager对象
-    window.FileManager = {
-        currentFolderId: null,
-        currentPage: 1,
-        pageSize: 20,
-        allFiles: [],
-        filteredFiles: [],
-        currentSortField: 'name',
-        currentSortOrder: 'asc',
-        folderSizeCache: {}
-    };
-    
-    // 从本地存储中恢复页面大小设置
-    const savedPageSize = localStorage.getItem('pageSize');
-    if (savedPageSize) {
-        FileManager.pageSize = parseInt(savedPageSize, 10);
-      
-        // 更新选择框的值
+    try {
+        console.log('开始页面初始化...');
+        
+        // 初始化 FileManager 对象
+        window.FileManager = {
+            currentFolderId: null,
+            currentPage: 1,
+            pageSize: parseInt(localStorage.getItem('pageSize')) || 20,
+            allFiles: [],
+            filteredFiles: [],
+            folderSizeCache: {},
+            sortField: 'name',
+            sortOrder: 'asc',
+            selectedFiles: new Set()
+        };
+        
+        // 初始化模态框
+        const modals = [
+            'newFolderModal',
+            'moveModal',
+            'batchMoveModal',
+            'confirmDeleteModal',
+            'changePasswordModal',
+            'renameModal',
+            'previewModal'
+        ];
+        
+        modals.forEach(modalId => {
+            const modalElement = document.getElementById(modalId);
+            if (modalElement) {
+                new bootstrap.Modal(modalElement);
+            }
+        });
+        
+        // 设置页面大小选择器的值
         const pageSizeSelect = document.getElementById('pageSize');
         if (pageSizeSelect) {
             pageSizeSelect.value = FileManager.pageSize;
+            pageSizeSelect.addEventListener('change', function() {
+                FileManager.pageSize = parseInt(this.value);
+                localStorage.setItem('pageSize', this.value);
+                renderFileList();
+            });
         }
-    }
-    
-    // 为页面大小选择器添加事件监听
-    const pageSizeSelect = document.getElementById('pageSize');
-    if (pageSizeSelect) {
-      pageSizeSelect.addEventListener('change', (e) => {
-        setPageSize(e.target.value);
-      });
-    }
-    
-    // 添加搜索按钮和输入框的事件监听
-    const searchButton = document.getElementById('fileSearchButton');
-    const searchInput = document.getElementById('fileSearchInput');
-    
-    if (searchButton) {
-      searchButton.addEventListener('click', searchFiles);
-      console.log('搜索按钮事件已绑定');
-    }
-    
-    if (searchInput) {
-      searchInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-          searchFiles();
+        
+        // 绑定分页事件
+        const prevPage = document.getElementById('prevPage');
+        const nextPage = document.getElementById('nextPage');
+        
+        if (prevPage) {
+            prevPage.addEventListener('click', function(e) {
+                e.preventDefault();
+                if (FileManager.currentPage > 1) {
+                    FileManager.currentPage--;
+                    renderFileList();
+                }
+            });
         }
-      });
-      console.log('搜索输入框事件已绑定');
+        
+        if (nextPage) {
+            nextPage.addEventListener('click', function(e) {
+                e.preventDefault();
+                if (FileManager.currentPage < FileManager.totalPages) {
+                    FileManager.currentPage++;
+                    renderFileList();
+                }
+            });
+        }
+        
+        // 在主页时加载文件列表
+        if (window.location.pathname.includes('index.html') || window.location.pathname === '/' || window.location.pathname === '') {
+            console.log('加载文件列表...');
+            
+            // 显示主内容区域
+            const mainContent = document.getElementById('main-content');
+            if (mainContent) {
+                mainContent.style.display = 'block';
+                console.log('主内容区域已显示');
+            } else {
+                console.error('找不到主内容区域元素');
+            }
+            
+            // 加载文件列表
+            await loadFiles();
+            
+            // 初始化排序图标
+            updateSortIcon();
+            
+            console.log('页面初始化完成');
+        }
+    } catch (error) {
+        console.error('页面初始化错误:', error);
+        showToast(`页面初始化失败: ${error.message}`, 'error');
     }
-    
-    // 添加修改密码按钮事件监听
-    const changePasswordBtn = document.getElementById('changePasswordBtn');
-    if (changePasswordBtn) {
-      changePasswordBtn.addEventListener('click', () => {
-        const changePasswordModal = new bootstrap.Modal(document.getElementById('changePasswordModal'));
-        changePasswordModal.show();
-      });
-      console.log('修改密码按钮事件已绑定');
-    }
-    
-    // 添加退出登录按钮事件监听
-    const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) {
-      logoutBtn.addEventListener('click', logout);
-      console.log('退出登录按钮事件已绑定');
-    }
-    
-    // 添加保存密码按钮事件监听
-    const savePasswordBtn = document.getElementById('savePasswordBtn');
-    if (savePasswordBtn) {
-      savePasswordBtn.addEventListener('click', changePassword);
-      console.log('保存密码按钮事件已绑定');
-    }
-    
-    // 先检查登录状态
-    const isLoggedIn = await checkLoginStatus();
-    
-    if (!isLoggedIn) {
-      console.log('用户未登录，不加载文件列表');
-      return;
-    }
-    
-    // 在主页时加载文件列表
-    if (window.location.pathname.includes('index.html') || window.location.pathname === '/' || window.location.pathname === '') {
-      console.log('页面初始化中，加载文件列表...');
-      
-      // 显示主内容区域
-      const mainContent = document.getElementById('main-content');
-      if (mainContent) {
-        mainContent.style.display = 'block';
-        console.log('主内容区域已显示');
-      } else {
-        console.error('找不到主内容区域元素');
-      }
-      
-      // 加载文件列表
-      await loadFiles();
-      
-      // 初始化排序图标
-      updateSortIcon();
-      
-      console.log('页面初始化完成');
-    }
-  } catch (error) {
-    console.error('页面初始化错误:', error);
-    showToast(`页面初始化失败: ${error.message}`, 'error');
-  }
 }
 
 // 退出登录
@@ -2069,32 +2037,60 @@ if (FileManager.uploadSuccess) {
 
 // 更新文件统计信息
 function updateFileStats() {
-    const stats = {
-        totalFiles: 0,
-        totalFolders: 0,
-        totalSize: 0
-    };
+    try {
+        console.log('开始更新文件统计信息');
+        
+        const stats = {
+            totalFiles: 0,
+            totalFolders: 0,
+            totalSize: 0
+        };
 
-    if (FileManager.filteredFiles) {
+        if (!FileManager.filteredFiles) {
+            console.warn('FileManager.filteredFiles未定义');
+            return;
+        }
+
+        console.log('当前过滤后的文件列表:', FileManager.filteredFiles);
+
         FileManager.filteredFiles.forEach(file => {
             if (file.is_folder) {
                 stats.totalFolders++;
-                stats.totalSize += FileManager.folderSizeCache[file.id] || 0;
+                const folderSize = FileManager.folderSizeCache[file.id] || 0;
+                stats.totalSize += folderSize;
             } else {
                 stats.totalFiles++;
                 stats.totalSize += file.size || 0;
             }
         });
-    }
 
-    const statsElement = document.getElementById('fileStats');
-    if (statsElement) {
+        console.log('统计结果:', stats);
+
+        const statsElement = document.getElementById('fileStats');
+        if (!statsElement) {
+            console.error('找不到文件统计信息元素');
+            return;
+        }
+
         statsElement.innerHTML = `
-            <div class="d-flex justify-content-between">
-                <span>文件夹: ${stats.totalFolders}</span>
-                <span>文件: ${stats.totalFiles}</span>
-                <span>总大小: ${formatSize(stats.totalSize)}</span>
+            <div class="d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-folder me-1"></i>${stats.totalFolders} 个文件夹</span>
+                <span><i class="bi bi-file-earmark me-1"></i>${stats.totalFiles} 个文件</span>
+                <span><i class="bi bi-hdd me-1"></i>总大小: ${formatSize(stats.totalSize)}</span>
             </div>
         `;
+        
+        console.log('文件统计信息更新完成');
+    } catch (error) {
+        console.error('更新文件统计信息时出错:', error);
+        const statsElement = document.getElementById('fileStats');
+        if (statsElement) {
+            statsElement.innerHTML = `
+                <div class="text-danger">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    统计信息更新失败
+                </div>
+            `;
+        }
     }
 }
