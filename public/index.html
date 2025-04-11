@@ -36,13 +36,17 @@
             text-overflow: ellipsis;
             padding-left: 20px;
             padding-right: 20px;
+            max-width: 0;
         }
-        .col-checkbox { width: 5%; }
-        .col-number { width: 5%; }
-        .col-name { width: 35%; }
-        .col-size { width: 10%; }
-        .col-date { width: 20%; }
-        .col-actions { width: 25%; }
+        .table-responsive {
+            overflow-x: hidden !important;
+        }
+        .col-checkbox { width: 5%; min-width: 40px; }
+        .col-number { width: 5%; min-width: 40px; }
+        .col-name { width: 35%; min-width: 200px; }
+        .col-size { width: 10%; min-width: 80px; }
+        .col-date { width: 20%; min-width: 150px; }
+        .col-actions { width: 25%; min-width: 180px; }
         .system-title {
             text-align: center;
             margin: 20px 0;
@@ -154,7 +158,8 @@
         }
         /* 文件名样式 */
         .file-name-cell {
-            max-width: 0;
+            display: block;
+            max-width: 100%;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -164,7 +169,8 @@
             content: attr(data-full-name);
             position: absolute;
             left: 100%;
-            top: 0;
+            top: 50%;
+            transform: translateY(-50%);
             background-color: #333;
             color: white;
             padding: 5px 10px;
@@ -175,6 +181,7 @@
             overflow: hidden;
             text-overflow: ellipsis;
             margin-left: 10px;
+            pointer-events: none;
         }
         /* 只有当文本被截断时才显示提示框 */
         .file-name-cell.truncated:hover::after {
