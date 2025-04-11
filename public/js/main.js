@@ -1226,50 +1226,50 @@ async function deleteFile(id, isFolder) {
 
 // 实际执行删除操作
 async function performDelete(fileId) {
-  try {
-    console.log('开始删除文件:', fileId);
-    
-    const response = await fetch(`/api/files/${fileId}`, {
-      method: 'DELETE',
-      headers: {
-        'Accept': 'application/json'
-      }
-    });
-    
-    console.log('删除请求响应:', {
-      status: response.status,
-      statusText: response.statusText
-    });
-    
-    const contentType = response.headers.get('content-type');
-    let data;
-    
-    if (contentType && contentType.includes('application/json')) {
-      data = await response.json();
-    } else {
-      const text = await response.text();
-      console.error('非JSON响应:', text);
-      throw new Error('服务器返回了非JSON格式的响应');
+    try {
+        console.log('开始删除文件:', fileId);
+        
+        const response = await fetch(`/api/files/${fileId}`, {
+            method: 'DELETE',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+        
+        console.log('删除请求响应:', {
+            status: response.status,
+            statusText: response.statusText
+        });
+        
+        const contentType = response.headers.get('content-type');
+        let data;
+        
+        if (contentType && contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+            console.error('非JSON响应:', text);
+            throw new Error('服务器返回了非JSON格式的响应');
+        }
+        
+        if (!response.ok) {
+            console.error('删除失败:', {
+                status: response.status,
+                data: data
+            });
+            throw new Error(data.message || data.error || '删除文件失败');
+        }
+        
+        console.log('删除成功:', data);
+        return data;
+    } catch (error) {
+        console.error('删除文件时出错:', {
+            fileId: fileId,
+            error: error.message,
+            stack: error.stack
+        });
+        throw error;
     }
-    
-    if (!response.ok) {
-      console.error('删除失败:', {
-        status: response.status,
-        data: data
-      });
-      throw new Error(data.message || data.error || '删除文件失败');
-    }
-    
-    console.log('删除成功:', data);
-    return data;
-  } catch (error) {
-    console.error('删除文件时出错:', {
-      fileId: fileId,
-      error: error.message,
-      stack: error.stack
-    });
-    throw error;
-  }
 }
 
 // 全选/取消全选
@@ -1307,7 +1307,70 @@ async function deleteSelected() {
     // 确保确认删除按钮的事件绑定正确
     const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
     if (confirmDeleteBtn) {
-        confirmDeleteBtn.onclick = performDelete;
+        confirmDeleteBtn.onclick = async function() {
+            try {
+                // 创建进度条容器
+                const progressContainer = document.createElement('div');
+                progressContainer.className = 'progress-container mt-3';
+                progressContainer.innerHTML = `
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 0%">0%</div>
+                    </div>
+                    <div class="text-center mt-2">正在删除文件...</div>
+                `;
+                
+                // 添加到模态框
+                const modalBody = FileManager.confirmDeleteModal._element.querySelector('.modal-body');
+                modalBody.appendChild(progressContainer);
+                
+                // 禁用确认按钮
+                confirmDeleteBtn.disabled = true;
+                
+                // 使用 Promise.all 并行处理删除请求
+                const totalFiles = selectedIds.length;
+                let successCount = 0;
+                let failedCount = 0;
+                
+                // 创建所有删除请求
+                const deletePromises = selectedIds.map(async (fileId, index) => {
+                    try {
+                        await performDelete(fileId);
+                        successCount++;
+                    } catch (error) {
+                        failedCount++;
+                        console.error(`删除文件 ${fileId} 失败:`, error);
+                    }
+                    
+                    // 更新进度
+                    const progress = Math.round(((index + 1) / totalFiles) * 100);
+                    const progressBar = progressContainer.querySelector('.progress-bar');
+                    progressBar.style.width = `${progress}%`;
+                    progressBar.textContent = `${progress}%`;
+                });
+                
+                // 等待所有删除操作完成
+                await Promise.all(deletePromises);
+                
+                // 显示结果
+                if (successCount === totalFiles) {
+                    showToast('批量删除成功');
+                } else if (successCount > 0) {
+                    showToast(`部分文件删除成功 (${successCount}/${totalFiles})`, 'warning');
+                } else {
+                    showToast('所有文件删除失败', 'error');
+                }
+                
+                // 关闭模态框并刷新文件列表
+                FileManager.confirmDeleteModal.hide();
+                loadFiles();
+            } catch (error) {
+                console.error('批量删除失败:', error);
+                showToast(`批量删除失败: ${error.message}`, 'error');
+            } finally {
+                FileManager.pendingBatchDeleteFiles = null;
+            }
+        };
         console.log('已重新绑定确认删除按钮点击事件');
     }
     
