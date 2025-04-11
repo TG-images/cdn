@@ -515,6 +515,10 @@ function renderFileList() {
         const nameCell = document.createElement('td');
         nameCell.className = 'col-name';
         
+        // 创建一个包含图标和文件名的div容器
+        const nameContainer = document.createElement('div');
+        nameContainer.className = 'd-flex align-items-center';
+        
         // 添加图标
         const iconSpan = document.createElement('span');
         iconSpan.className = 'me-2';
@@ -523,7 +527,7 @@ function renderFileList() {
         } else {
             iconSpan.innerHTML = '<i class="bi bi-file-earmark-fill text-primary"></i>';
         }
-        nameCell.appendChild(iconSpan);
+        nameContainer.appendChild(iconSpan);
         
         // 添加文件名（文件夹保持链接，文件取消链接）
         if (file.is_folder) {
@@ -536,7 +540,7 @@ function renderFileList() {
                 e.preventDefault();
                 loadFiles(file.id);
             };
-            nameCell.appendChild(nameLink);
+            nameContainer.appendChild(nameLink);
             
             // 检查文件名是否被截断
             setTimeout(() => {
@@ -549,7 +553,7 @@ function renderFileList() {
             nameSpan.textContent = file.name || file.filename;
             nameSpan.className = 'file-name-cell';
             nameSpan.setAttribute('data-full-name', file.name || file.filename);
-            nameCell.appendChild(nameSpan);
+            nameContainer.appendChild(nameSpan);
             
             // 检查文件名是否被截断
             setTimeout(() => {
@@ -559,6 +563,8 @@ function renderFileList() {
             }, 0);
         }
         
+        // 将包含图标和文件名的容器添加到单元格
+        nameCell.appendChild(nameContainer);
         row.appendChild(nameCell);
         
         // 大小
