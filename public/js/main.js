@@ -2106,3 +2106,22 @@ if (FileManager.uploadSuccess) {
         });
     }
 }
+
+// 更新文件统计信息
+function updateFileStats() {
+    const totalFiles = FileManager.allFiles.length;
+    const totalFolders = FileManager.allFiles.filter(file => file.is_folder).length;
+    const totalSize = FileManager.allFiles.reduce((sum, file) => sum + (file.size || 0), 0);
+    
+    // 更新统计信息显示
+    const statsElement = document.getElementById('fileStats');
+    if (statsElement) {
+        statsElement.innerHTML = `
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i> 
+                当前目录: ${totalFolders} 个文件夹, ${totalFiles - totalFolders} 个文件, 
+                总大小: ${formatSize(totalSize)}
+            </div>
+        `;
+    }
+}
