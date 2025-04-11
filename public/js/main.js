@@ -1295,7 +1295,7 @@ async function performDelete() {
             showToast('批量删除成功');
         } else if (successCount > 0) {
             showToast(`部分文件删除成功 (${successCount}/${FileManager.pendingBatchDeleteFiles.length})`, 'warning');
-    } else {
+        } else {
             showToast('批量删除失败', 'error');
         }
         
@@ -1306,6 +1306,7 @@ async function performDelete() {
             FileManager.currentPage--;
         }
         
+        // 重新加载文件列表
         loadFiles();
         
         // 关闭确认对话框
@@ -1332,7 +1333,9 @@ function toggleSelectAll() {
 
 // 批量删除
 async function deleteSelected() {
-    const selectedFiles = Array.from(document.querySelectorAll('.file-checkbox:checked')).map(cb => cb.value);
+    // 获取选中的文件ID
+    const selectedFiles = Array.from(document.querySelectorAll('.file-checkbox:checked')).map(cb => cb.dataset.id);
+ 
     if (selectedFiles.length === 0) {
         showToast('请选择要删除的文件', 'error');
         return;
