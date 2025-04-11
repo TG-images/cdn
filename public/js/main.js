@@ -1368,6 +1368,7 @@ async function deleteFile(id, isFolder) {
         } else {
             console.error('确认删除模态框未初始化');
             showToast('系统错误：确认删除模态框未初始化', 'error');
+            FileManager.pendingDeleteId = null;
         }
     } catch (error) {
         console.error('删除文件时出错:', error);
