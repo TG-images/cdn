@@ -481,23 +481,17 @@ function renderFileList() {
     pageFiles.forEach((file, index) => {
         const row = document.createElement('tr');
         
-        // 复选框
+        // 添加复选框单元格
         const checkboxCell = document.createElement('td');
         checkboxCell.className = 'col-checkbox';
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
-        checkbox.className = 'form-check-input';
-        checkbox.dataset.id = file.id;
+        checkbox.className = 'file-checkbox';
+        checkbox.value = file.id;
         checkboxCell.appendChild(checkbox);
         row.appendChild(checkboxCell);
         
-        // 序号
-        const numberCell = document.createElement('td');
-        numberCell.className = 'col-number';
-        numberCell.textContent = startIndex + index + 1;
-        row.appendChild(numberCell);
-        
-        // 名称
+        // 名称单元格
         const nameCell = document.createElement('td');
         nameCell.className = 'col-name';
         const nameLink = document.createElement('a');
