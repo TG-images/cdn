@@ -425,7 +425,7 @@ async function renderFileList() {
         if (file.is_folder) {
             const folderLink = document.createElement('a');
             folderLink.href = '#';
-            folderLink.textContent = file.name;
+            folderLink.textContent = file.filename;
             folderLink.onclick = (e) => {
                 e.preventDefault();
                 FileManager.currentFolderId = file.id;
@@ -434,7 +434,7 @@ async function renderFileList() {
             };
             nameSpan.appendChild(folderLink);
         } else {
-            nameSpan.textContent = file.name;
+            nameSpan.textContent = file.filename;
         }
         nameDiv.appendChild(nameSpan);
         
