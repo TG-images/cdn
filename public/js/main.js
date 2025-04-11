@@ -21,6 +21,8 @@ window.FileManager = {
     batchMoveModal: null,
     confirmDeleteModal: null,
     renameModal: null,
+    previewModal: null,
+    changePasswordModal: null,
     // 添加进行中标记，避免重复请求
     pendingFolderSizeRequests: {},
     calculatingSizes: new Set(),
@@ -51,50 +53,44 @@ function initializeModals() {
 
 function initializeModalsAfterLoad() {
     try {
-        // 获取 Modal 元素
+        // 获取模态框元素
         const newFolderModalEl = document.getElementById('newFolderModal');
         const moveModalEl = document.getElementById('moveModal');
         const batchMoveModalEl = document.getElementById('batchMoveModal');
         const confirmDeleteModalEl = document.getElementById('confirmDeleteModal');
         const renameModalEl = document.getElementById('renameModal');
+        const previewModalEl = document.getElementById('previewModal');
+        const changePasswordModalEl = document.getElementById('changePasswordModal');
 
         // 检查元素是否存在并初始化
         if (newFolderModalEl && !FileManager.newFolderModal) {
-            FileManager.newFolderModal = new bootstrap.Modal(newFolderModalEl, {
-                backdrop: 'static',
-                keyboard: false
-            });
+            FileManager.newFolderModal = new bootstrap.Modal(newFolderModalEl);
         }
         if (moveModalEl && !FileManager.moveModal) {
-            FileManager.moveModal = new bootstrap.Modal(moveModalEl, {
-                backdrop: 'static',
-                keyboard: false
-            });
+            FileManager.moveModal = new bootstrap.Modal(moveModalEl);
         }
         if (batchMoveModalEl && !FileManager.batchMoveModal) {
-            FileManager.batchMoveModal = new bootstrap.Modal(batchMoveModalEl, {
-                backdrop: 'static',
-                keyboard: false
-            });
+            FileManager.batchMoveModal = new bootstrap.Modal(batchMoveModalEl);
         }
         if (confirmDeleteModalEl && !FileManager.confirmDeleteModal) {
-            FileManager.confirmDeleteModal = new bootstrap.Modal(confirmDeleteModalEl, {
-                backdrop: 'static',
-                keyboard: false
-            });
+            FileManager.confirmDeleteModal = new bootstrap.Modal(confirmDeleteModalEl);
             
-            // 绑定确认删除按钮的点击事件
-            const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
-            if (confirmDeleteBtn && !confirmDeleteBtn.onclick) {
-                confirmDeleteBtn.onclick = performDelete;
-                console.log('已绑定确认删除按钮点击事件');
-            }
+            // 添加取消事件监听器
+            confirmDeleteModalEl.addEventListener('hidden.bs.modal', function () {
+                // 重置删除状态
+                FileManager.pendingDeleteId = null;
+                FileManager.pendingBatchDeleteFiles = null;
+                console.log('删除模态框已关闭，重置删除状态');
+            });
         }
         if (renameModalEl && !FileManager.renameModal) {
-            FileManager.renameModal = new bootstrap.Modal(renameModalEl, {
-                backdrop: 'static',
-                keyboard: false
-            });
+            FileManager.renameModal = new bootstrap.Modal(renameModalEl);
+        }
+        if (previewModalEl && !FileManager.previewModal) {
+            FileManager.previewModal = new bootstrap.Modal(previewModalEl);
+        }
+        if (changePasswordModalEl && !FileManager.changePasswordModal) {
+            FileManager.changePasswordModal = new bootstrap.Modal(changePasswordModalEl);
         }
     } catch (error) {
         console.error('Modal 初始化错误:', error);
