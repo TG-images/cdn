@@ -1334,23 +1334,32 @@ function toggleSelectAll() {
 
 // 批量删除
 async function deleteSelected() {
-    // 获取选中的文件ID
-    const selectedFiles = Array.from(document.querySelectorAll('.file-checkbox:checked')).map(cb => cb.dataset.id);
- 
-    if (selectedFiles.length === 0) {
-        showToast('请选择要删除的文件', 'error');
+    const selectedCheckboxes = document.querySelectorAll('#fileList input[type="checkbox"]:checked');
+    if (selectedCheckboxes.length === 0) {
+        showToast('请先选择要删除的文件', 'warning');
         return;
     }
-    
-    // 存储待删除的文件列表
-    FileManager.pendingBatchDeleteFiles = selectedFiles;
+
+    // 收集选中的文件ID
+    const selectedIds = Array.from(selectedCheckboxes)
+        .map(cb => cb.dataset.id)
+        .filter(id => id); // 过滤掉undefined或null的ID
+
+    if (selectedIds.length === 0) {
+        showToast('没有有效的文件ID', 'error');
+        return;
+    }
+
+    // 设置批量删除的文件ID
+    FileManager.pendingBatchDeleteFiles = selectedIds;
     
     // 设置确认消息
-    document.getElementById('confirmDeleteMessage').textContent = 
-        `确定要删除选中的 ${selectedFiles.length} 个文件/文件夹吗？`;
+    const confirmMessage = `确定要删除选中的 ${selectedIds.length} 个文件吗？`;
+    document.getElementById('confirmDeleteMessage').textContent = confirmMessage;
     
     // 显示确认对话框
-    FileManager.confirmDeleteModal.show();
+    const confirmDeleteModal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
+    confirmDeleteModal.show();
 }
 
 // 批量移动文件
