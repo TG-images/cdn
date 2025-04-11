@@ -370,7 +370,7 @@ function updateSortIcon() {
 
 // 渲染文件列表
 function renderFileList() {
-    const fileList = document.querySelector('#fileList tbody');
+    const fileList = document.querySelector('#fileList');
     if (!fileList) {
         console.error('找不到文件列表元素');
         return;
@@ -509,7 +509,15 @@ function renderFileList() {
         deleteBtn.className = 'btn btn-sm btn-outline-danger';
         deleteBtn.innerHTML = '<i class="bi bi-trash me-1"></i>删除';
         deleteBtn.title = '删除';
-        deleteBtn.onclick = () => deleteFile(file.id);
+        deleteBtn.onclick = () => {
+            const modal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
+            document.getElementById('confirmDeleteMessage').textContent = `确定要删除 ${file.filename} 吗？`;
+            document.getElementById('confirmDeleteBtn').onclick = () => {
+                deleteFile(file.id);
+                modal.hide();
+            };
+            modal.show();
+        };
         btnGroup.appendChild(deleteBtn);
 
         actionsCell.appendChild(btnGroup);
@@ -561,14 +569,8 @@ function updateBreadcrumb(folderPath) {
 
 // 显示新建文件夹模态框
 function showNewFolderModal() {
-    // 清空输入框
-    document.getElementById('folderName').value = '';
-    // 显示模态框
-    FileManager.newFolderModal.show();
-    // 显示后自动聚焦到输入框
-    setTimeout(() => {
-        document.getElementById('folderName').focus();
-    }, 500);
+    const modal = new bootstrap.Modal(document.getElementById('newFolderModal'));
+    modal.show();
 }
 
 // 创建文件夹
