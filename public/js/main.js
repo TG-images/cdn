@@ -126,11 +126,11 @@ function showToast(message, type = 'info') {
 
 // 格式化文件大小
 function formatSize(bytes) {
-    if (bytes === null || bytes === undefined) return '-';
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    if (bytes === 0) return '0 Byte';
-    const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
-    return Math.round(bytes / Math.pow(1024, i), 2) + ' ' + sizes[i];
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
 // 格式化文件大小
@@ -381,7 +381,8 @@ function renderFileList() {
     
     // 确保有文件要显示
     if (!FileManager.filteredFiles || FileManager.filteredFiles.length === 0) {
-        console.log('没有文件需要显示');
+        fileList.innerHTML = '<tr><td colspan="6" class="text-center">当前文件夹为空</td></tr>';
+        updateFileStats();
         return;
     }
     
@@ -490,34 +491,35 @@ function renderFileList() {
             btnGroup.appendChild(previewBtn);
         }
 
-        const moveBtn = document.createElement('button');
-        moveBtn.className = 'btn btn-sm btn-outline-info';
-        moveBtn.innerHTML = '<i class="bi bi-folder-symlink me-1"></i>移动';
-        moveBtn.title = '移动';
-        moveBtn.onclick = () => showMoveModal(file.id);
-        btnGroup.appendChild(moveBtn);
-        
         const renameBtn = document.createElement('button');
         renameBtn.className = 'btn btn-sm btn-outline-secondary';
         renameBtn.innerHTML = '<i class="bi bi-pencil me-1"></i>重命名';
         renameBtn.title = '重命名';
-        renameBtn.onclick = () => showRenameModal(file.id, file.filename);
+        renameBtn.onclick = () => showRenameModal(file);
         btnGroup.appendChild(renameBtn);
+
+        const moveBtn = document.createElement('button');
+        moveBtn.className = 'btn btn-sm btn-outline-info';
+        moveBtn.innerHTML = '<i class="bi bi-arrows-move me-1"></i>移动';
+        moveBtn.title = '移动';
+        moveBtn.onclick = () => showMoveModal([file]);
+        btnGroup.appendChild(moveBtn);
 
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'btn btn-sm btn-outline-danger';
         deleteBtn.innerHTML = '<i class="bi bi-trash me-1"></i>删除';
         deleteBtn.title = '删除';
-        deleteBtn.onclick = () => deleteFile(file.id, file.is_folder);
+        deleteBtn.onclick = () => deleteFile(file.id);
         btnGroup.appendChild(deleteBtn);
-        
+
         actionsCell.appendChild(btnGroup);
         row.appendChild(actionsCell);
 
         fileList.appendChild(row);
     });
-    
-    console.log('文件列表渲染完成，共添加', fileList.children.length, '行');
+
+    // 更新文件统计信息
+    updateFileStats();
 }
 
 // 更新面包屑
@@ -1655,6 +1657,9 @@ async function initPage() {
   try {
     console.log('页面初始化开始...');
     
+    // 初始化Modal
+    initializeModals();
+    
     // 初始化FileManager对象
     window.FileManager = {
         currentFolderId: null,
@@ -2063,26 +2068,30 @@ if (FileManager.uploadSuccess) {
 // 更新文件统计信息
 function updateFileStats() {
     const stats = {
-        folders: 0,
-        files: 0,
+        totalFiles: 0,
+        totalFolders: 0,
         totalSize: 0
     };
 
-    FileManager.allFiles.forEach(file => {
-        if (file.is_folder) {
-            stats.folders++;
-        } else {
-            stats.files++;
-            stats.totalSize += file.size || 0;
-        }
-    });
+    if (FileManager.filteredFiles) {
+        FileManager.filteredFiles.forEach(file => {
+            if (file.is_folder) {
+                stats.totalFolders++;
+                stats.totalSize += FileManager.folderSizeCache[file.id] || 0;
+            } else {
+                stats.totalFiles++;
+                stats.totalSize += file.size || 0;
+            }
+        });
+    }
 
-    const fileStatsElement = document.getElementById('fileStats');
-    if (fileStatsElement) {
-        fileStatsElement.innerHTML = `
-            <div class="alert alert-info">
-                <i class="bi bi-info-circle me-1"></i>
-                当前目录：${stats.folders} 个文件夹，${stats.files} 个文件，总大小：${formatFileSize(stats.totalSize)}
+    const statsElement = document.getElementById('fileStats');
+    if (statsElement) {
+        statsElement.innerHTML = `
+            <div class="d-flex justify-content-between">
+                <span>文件夹: ${stats.totalFolders}</span>
+                <span>文件: ${stats.totalFiles}</span>
+                <span>总大小: ${formatSize(stats.totalSize)}</span>
             </div>
         `;
     }
