@@ -82,6 +82,13 @@ function initializeModalsAfterLoad() {
                 FileManager.pendingBatchDeleteFiles = null;
                 console.log('删除模态框已关闭，重置删除状态');
             });
+            
+            // 确保确认删除按钮可以点击
+            const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+            if (confirmDeleteBtn) {
+                confirmDeleteBtn.disabled = false;
+                console.log('确认删除按钮已启用');
+            }
         }
         if (renameModalEl && !FileManager.renameModal) {
             FileManager.renameModal = new bootstrap.Modal(renameModalEl);
@@ -1290,6 +1297,7 @@ async function deleteFile(id, isFolder) {
         
         // 设置待删除的文件ID
         FileManager.pendingDeleteId = id;
+        FileManager.pendingDeleteIsFolder = isFolder;
         
         // 设置确认消息
         const confirmMessage = `确定要删除${isFolder ? '文件夹' : '文件'}吗？`;
@@ -1301,6 +1309,9 @@ async function deleteFile(id, isFolder) {
             // 移除之前的事件监听器，防止重复绑定
             const newConfirmDeleteBtn = confirmDeleteBtn.cloneNode(true);
             confirmDeleteBtn.parentNode.replaceChild(newConfirmDeleteBtn, confirmDeleteBtn);
+            
+            // 确保按钮可以点击
+            newConfirmDeleteBtn.disabled = false;
             
             newConfirmDeleteBtn.onclick = async function() {
                 try {
@@ -1346,6 +1357,7 @@ async function deleteFile(id, isFolder) {
                 } finally {
                     // 确保在任何情况下都重置状态
                     FileManager.pendingDeleteId = null;
+                    FileManager.pendingDeleteIsFolder = false;
                     // 如果模态框仍然显示，则关闭它
                     if (FileManager.confirmDeleteModal && FileManager.confirmDeleteModal._element.classList.contains('show')) {
                         FileManager.confirmDeleteModal.hide();
@@ -1369,11 +1381,13 @@ async function deleteFile(id, isFolder) {
             console.error('确认删除模态框未初始化');
             showToast('系统错误：确认删除模态框未初始化', 'error');
             FileManager.pendingDeleteId = null;
+            FileManager.pendingDeleteIsFolder = false;
         }
     } catch (error) {
         console.error('删除文件时出错:', error);
         showToast(`删除失败: ${error.message}`, 'error');
         FileManager.pendingDeleteId = null;
+        FileManager.pendingDeleteIsFolder = false;
     }
 }
 
@@ -1385,9 +1399,10 @@ async function performDelete(fileId) {
         const response = await fetch(`/api/files/${fileId}`, {
             method: 'DELETE',
             headers: {
-                'Accept': 'application/json'
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
             },
-            credentials: 'include'  // 添加这一行确保请求包含cookie
+            credentials: 'include'  // 确保请求包含cookie
         });
         
         console.log('删除请求响应:', {
@@ -1470,6 +1485,9 @@ async function deleteSelected() {
         // 移除之前的事件监听器，防止重复绑定
         const newConfirmDeleteBtn = confirmDeleteBtn.cloneNode(true);
         confirmDeleteBtn.parentNode.replaceChild(newConfirmDeleteBtn, confirmDeleteBtn);
+        
+        // 确保按钮可以点击
+        newConfirmDeleteBtn.disabled = false;
         
         newConfirmDeleteBtn.onclick = async function() {
             try {
