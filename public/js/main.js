@@ -245,6 +245,13 @@ async function loadFiles(path = '') {
     try {
         console.log('开始加载文件列表:', { path, currentFolderId: FileManager.currentFolderId });
         
+        // 如果 path 是数字或字符串形式的数字，则将其转换为文件夹 ID
+        if (path && !isNaN(path)) {
+            FileManager.currentFolderId = path;
+        } else if (path === 'null' || path === null) {
+            FileManager.currentFolderId = null;
+        }
+        
         // 显示加载状态
         const fileList = document.getElementById('fileList');
         if (!fileList) {
@@ -292,8 +299,14 @@ async function loadFiles(path = '') {
         // 更新当前路径
         FileManager.currentPath = path;
         
+        // 获取文件夹路径
+        let folderPath = [];
+        if (FileManager.currentFolderId) {
+            folderPath = await getFolderPath(FileManager.currentFolderId);
+        }
+        
         // 更新面包屑导航
-        updateBreadcrumb(path);
+        updateBreadcrumb(folderPath);
         
         // 渲染文件列表
         renderFileList();
