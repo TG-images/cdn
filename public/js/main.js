@@ -2070,7 +2070,7 @@ async function updateFolderSizeCache(folderId) {
 }
 
 // 修改文件上传成功后的处理
-if (allSuccess) {
+if (uploadSuccess) {
     showToast('所有文件上传成功');
     // 重新加载文件列表
     if (typeof loadFiles === 'function') {
