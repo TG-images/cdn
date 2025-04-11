@@ -355,7 +355,8 @@ async function initializeUpload() {
             const uploadSuccess = results.every(result => result);
             
             if (uploadSuccess) {
-                showToast('所有文件上传成功');
+                FileManager.uploadSuccess = true;
+                showToast('所有文件上传成功', 'success');
                 // 重新加载文件列表
                 if (typeof loadFiles === 'function') {
                     loadFiles().then(() => {
@@ -373,6 +374,7 @@ async function initializeUpload() {
                     });
                 }
             } else {
+                FileManager.uploadSuccess = false;
                 showToast('部分文件上传失败', 'error');
                 uploadBtn.disabled = false;
                 fileInput.disabled = false;
