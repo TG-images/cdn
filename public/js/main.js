@@ -1357,9 +1357,20 @@ async function deleteSelected() {
     const confirmMessage = `确定要删除选中的 ${selectedIds.length} 个文件吗？`;
     document.getElementById('confirmDeleteMessage').textContent = confirmMessage;
     
+    // 确保确认删除按钮的事件绑定正确
+    const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+    if (confirmDeleteBtn) {
+        confirmDeleteBtn.onclick = performDelete;
+        console.log('已重新绑定确认删除按钮点击事件');
+    }
+    
     // 显示确认对话框
-    const confirmDeleteModal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
-    confirmDeleteModal.show();
+    if (FileManager.confirmDeleteModal) {
+        FileManager.confirmDeleteModal.show();
+    } else {
+        console.error('确认删除模态框未初始化');
+        showToast('系统错误：确认删除模态框未初始化', 'error');
+    }
 }
 
 // 批量移动文件
