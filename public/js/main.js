@@ -530,6 +530,8 @@ function renderFileList() {
             const nameLink = document.createElement('a');
             nameLink.href = '#';
             nameLink.textContent = file.name || file.filename;
+            nameLink.className = 'file-name-cell';
+            nameLink.setAttribute('data-full-name', file.name || file.filename);
             nameLink.onclick = function(e) {
                 e.preventDefault();
                 loadFiles(file.id);
@@ -538,6 +540,8 @@ function renderFileList() {
         } else {
             const nameSpan = document.createElement('span');
             nameSpan.textContent = file.name || file.filename;
+            nameSpan.className = 'file-name-cell';
+            nameSpan.setAttribute('data-full-name', file.name || file.filename);
             nameCell.appendChild(nameSpan);
         }
         
