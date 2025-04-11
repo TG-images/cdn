@@ -491,6 +491,12 @@ function renderFileList() {
         checkboxCell.appendChild(checkbox);
         row.appendChild(checkboxCell);
         
+        // 添加序号单元格
+        const numberCell = document.createElement('td');
+        numberCell.className = 'col-number';
+        numberCell.textContent = startIndex + index + 1;
+        row.appendChild(numberCell);
+        
         // 名称单元格
         const nameCell = document.createElement('td');
         nameCell.className = 'col-name';
@@ -1406,7 +1412,7 @@ async function deleteSelected() {
 
     // 收集选中的文件ID
     const selectedIds = Array.from(selectedCheckboxes)
-        .map(cb => cb.dataset.id)
+        .map(cb => cb.value)
         .filter(id => id); // 过滤掉undefined或null的ID
 
     if (selectedIds.length === 0) {
