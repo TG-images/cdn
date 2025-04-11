@@ -6,6 +6,7 @@ function waitForFileManager() {
         
         console.log('开始等待FileManager初始化...');
         
+        // 检查FileManager是否已经初始化
         if (window.FileManager && window.FileManager.currentFolderId !== undefined) {
             console.log('FileManager已初始化:', {
                 currentFolderId: window.FileManager.currentFolderId,
@@ -39,6 +40,12 @@ function waitForFileManager() {
 async function initializeUpload() {
     try {
         console.log('开始初始化上传功能...');
+        
+        // 检查showToast函数是否可用
+        if (typeof showToast !== 'function') {
+            console.error('showToast函数不可用');
+            throw new Error('showToast函数不可用');
+        }
         
         // 等待FileManager对象初始化完成
         await waitForFileManager();
