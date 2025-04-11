@@ -422,7 +422,20 @@ async function renderFileList() {
         nameDiv.appendChild(icon);
         
         const nameSpan = document.createElement('span');
-        nameSpan.textContent = file.name;
+        if (file.is_folder) {
+            const folderLink = document.createElement('a');
+            folderLink.href = '#';
+            folderLink.textContent = file.name;
+            folderLink.onclick = (e) => {
+                e.preventDefault();
+                FileManager.currentFolderId = file.id;
+                FileManager.currentPage = 1;
+                loadFiles();
+            };
+            nameSpan.appendChild(folderLink);
+        } else {
+            nameSpan.textContent = file.name;
+        }
         nameDiv.appendChild(nameSpan);
         
         nameCell.appendChild(nameDiv);
@@ -455,7 +468,7 @@ async function renderFileList() {
         if (file.is_folder) {
             const openBtn = document.createElement('button');
             openBtn.className = 'btn btn-sm btn-outline-primary';
-            openBtn.innerHTML = '<i class="bi bi-folder2-open"></i>';
+            openBtn.innerHTML = '<i class="bi bi-folder2-open me-1"></i>打开';
             openBtn.title = '打开文件夹';
             openBtn.onclick = () => {
                 FileManager.currentFolderId = file.id;
@@ -466,7 +479,7 @@ async function renderFileList() {
         } else {
             const previewBtn = document.createElement('button');
             previewBtn.className = 'btn btn-sm btn-outline-primary';
-            previewBtn.innerHTML = '<i class="bi bi-eye"></i>';
+            previewBtn.innerHTML = '<i class="bi bi-eye me-1"></i>预览';
             previewBtn.title = '预览';
             previewBtn.onclick = () => previewFile(file.id);
             btnGroup.appendChild(previewBtn);
@@ -474,21 +487,21 @@ async function renderFileList() {
 
         const moveBtn = document.createElement('button');
         moveBtn.className = 'btn btn-sm btn-outline-info';
-        moveBtn.innerHTML = '<i class="bi bi-folder-symlink"></i>';
+        moveBtn.innerHTML = '<i class="bi bi-folder-symlink me-1"></i>移动';
         moveBtn.title = '移动';
         moveBtn.onclick = () => showMoveModal(file.id);
         btnGroup.appendChild(moveBtn);
 
         const renameBtn = document.createElement('button');
         renameBtn.className = 'btn btn-sm btn-outline-secondary';
-        renameBtn.innerHTML = '<i class="bi bi-pencil"></i>';
+        renameBtn.innerHTML = '<i class="bi bi-pencil me-1"></i>重命名';
         renameBtn.title = '重命名';
         renameBtn.onclick = () => showRenameModal(file.id, file.name);
         btnGroup.appendChild(renameBtn);
 
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'btn btn-sm btn-outline-danger';
-        deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+        deleteBtn.innerHTML = '<i class="bi bi-trash me-1"></i>删除';
         deleteBtn.title = '删除';
         deleteBtn.onclick = () => deleteFile(file.id, file.is_folder);
         btnGroup.appendChild(deleteBtn);
@@ -1691,16 +1704,28 @@ async function initPage() {
   try {
     console.log('页面初始化开始...');
     
+    // 初始化FileManager对象
+    window.FileManager = {
+        currentFolderId: null,
+        currentPage: 1,
+        pageSize: 20,
+        allFiles: [],
+        filteredFiles: [],
+        currentSortField: 'name',
+        currentSortOrder: 'asc',
+        folderSizeCache: {}
+    };
+    
     // 从本地存储中恢复页面大小设置
     const savedPageSize = localStorage.getItem('pageSize');
-        if (savedPageSize) {
-      pageSize = parseInt(savedPageSize, 10);
-      
-      // 更新选择框的值
-      const pageSizeSelect = document.getElementById('pageSize');
-      if (pageSizeSelect) {
-        pageSizeSelect.value = pageSize;
-      }
+    if (savedPageSize) {
+        FileManager.pageSize = parseInt(savedPageSize, 10);
+        
+        // 更新选择框的值
+        const pageSizeSelect = document.getElementById('pageSize');
+        if (pageSizeSelect) {
+            pageSizeSelect.value = FileManager.pageSize;
+        }
     }
     
     // 为页面大小选择器添加事件监听
