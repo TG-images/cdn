@@ -1221,10 +1221,15 @@ async function performDelete() {
             
             const response = await fetch(`/api/files/${FileManager.pendingDeleteId}`, {
                 method: 'DELETE',
-                credentials: 'include'
+                credentials: 'include',
+                headers: {
+                    'Accept': 'application/json'
+                }
             });
             
             console.log('删除响应状态:', response.status);
+            const responseText = await response.text();
+            console.log('删除响应内容:', responseText);
             
             if (response.ok) {
                 showToast('删除成功');
@@ -1234,20 +1239,23 @@ async function performDelete() {
                 }
                 loadFiles();
             } else {
-                const responseText = await response.text();
-                console.log('删除响应内容:', responseText);
-                
                 let errorMessage;
                 try {
                     const responseData = JSON.parse(responseText);
                     errorMessage = responseData.error || responseData.message || '未知错误';
                 } catch (e) {
+                    console.error('解析响应JSON失败:', e);
                     errorMessage = responseText || '服务器返回了非JSON格式的数据';
                 }
+                console.error('删除失败:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    responseText: responseText
+                });
                 showToast(`删除失败: ${errorMessage}`, 'error');
             }
         } catch (error) {
-            console.error('Delete error:', error);
+            console.error('删除操作出错:', error);
             showToast(`删除失败: ${error.message}`, 'error');
         } finally {
             // 关闭确认对话框
