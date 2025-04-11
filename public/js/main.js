@@ -1,4 +1,4 @@
-const FileManager = {
+window.FileManager = {
     currentFolderId: null,
     selectedFileId: null,
     pendingDeleteId: null,
