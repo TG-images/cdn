@@ -352,9 +352,9 @@ async function initializeUpload() {
             }));
 
             // 检查所有文件是否上传成功
-            const allSuccess = results.every(result => result);
+            const uploadSuccess = results.every(result => result);
             
-            if (allSuccess) {
+            if (uploadSuccess) {
                 showToast('所有文件上传成功');
                 // 重新加载文件列表
                 if (typeof loadFiles === 'function') {
