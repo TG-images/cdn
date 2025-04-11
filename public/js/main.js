@@ -177,69 +177,39 @@ async function getFolderPath(folderId) {
 
 // 计算文件夹大小
 async function calculateFolderSize(folderId) {
-    // 检查缓存中是否已有数据
-    if (FileManager.folderSizeCache[folderId] !== undefined) {
-        return FileManager.folderSizeCache[folderId];
-    }
-    
-    // 添加进行中标记，避免重复请求
-    if (FileManager.pendingFolderSizeRequests[folderId]) {
-        return await FileManager.pendingFolderSizeRequests[folderId];
-    }
-
     try {
-        // 创建一个Promise并保存到请求中
-        const sizePromise = new Promise(async (resolve) => {
-            try {
-                console.log(`请求文件夹 ${folderId} 大小`);
-                const response = await fetch(`/api/folders/${folderId}/size`, {
-                    credentials: 'include',
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                });
-                
-                if (!response.ok) {
-                    console.warn(`文件夹 ${folderId} 大小获取失败:`, response.status);
-                    // 如果API不可用，使用本地计算备选方案
-                    const fallbackSize = calculateFolderSizeLocally(folderId);
-                    FileManager.folderSizeCache[folderId] = fallbackSize;
-                    resolve(fallbackSize);
-                    return;
-                }
-                
-                const contentType = response.headers.get('content-type');
-                if (!contentType || !contentType.includes('application/json')) {
-                    console.warn(`文件夹 ${folderId} 返回非JSON格式:`, contentType);
-                    const fallbackSize = calculateFolderSizeLocally(folderId);
-                    FileManager.folderSizeCache[folderId] = fallbackSize;
-                    resolve(fallbackSize);
-                    return;
-                }
-                
-                const data = await response.json();
-                console.log(`文件夹 ${folderId} 大小:`, data);
-                
-                // 存入缓存
-                FileManager.folderSizeCache[folderId] = data.size || 0;
-                resolve(data.size || 0);
-            } catch (error) {
-                console.error(`计算文件夹 ${folderId} 大小失败:`, error);
-                // 尝试本地计算
-                const fallbackSize = calculateFolderSizeLocally(folderId);
-                FileManager.folderSizeCache[folderId] = fallbackSize;
-                resolve(fallbackSize);
-            } finally {
-                // 完成后删除进行中标记
-                delete FileManager.pendingFolderSizeRequests[folderId];
-            }
-        });
+        // 如果缓存中有值，直接返回
+        if (FileManager.folderSizeCache[folderId] !== undefined) {
+            return FileManager.folderSizeCache[folderId];
+        }
+
+        // 如果已经在计算中，返回0
+        if (FileManager.pendingFolderSizeRequests[folderId]) {
+            return 0;
+        }
+
+        // 标记为计算中
+        FileManager.pendingFolderSizeRequests[folderId] = true;
+
+        const response = await fetch(`/api/folders/${folderId}/size`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
         
-        // 保存请求Promise
-        FileManager.pendingFolderSizeRequests[folderId] = sizePromise;
-        return await sizePromise;
+        const data = await response.json();
+        const size = data.size || 0;
+        
+        // 更新缓存
+        FileManager.folderSizeCache[folderId] = size;
+        
+        // 清除计算中标记
+        delete FileManager.pendingFolderSizeRequests[folderId];
+        
+        return size;
     } catch (error) {
-        console.error('计算文件夹大小出错:', error);
+        console.error('Error calculating folder size:', error);
+        // 清除计算中标记
+        delete FileManager.pendingFolderSizeRequests[folderId];
         return 0;
     }
 }
@@ -2108,5 +2078,41 @@ async function previewFile(fileId) {
     } catch (error) {
         console.error('预览文件失败:', error);
         alert('预览文件失败: ' + error.message);
+    }
+}
+
+// 在文件上传成功后更新文件夹大小缓存
+async function updateFolderSizeCache(folderId) {
+    if (folderId) {
+        // 清除该文件夹及其所有父文件夹的缓存
+        const folderPath = await getFolderPath(folderId);
+        for (const folder of folderPath) {
+            delete FileManager.folderSizeCache[folder.id];
+        }
+        // 重新计算当前文件夹大小
+        await calculateFolderSize(folderId);
+    }
+}
+
+// 修改文件上传成功后的处理
+if (allSuccess) {
+    showToast('所有文件上传成功');
+    // 重新加载文件列表
+    if (typeof loadFiles === 'function') {
+        loadFiles().then(async () => {
+            // 更新文件夹大小缓存
+            await updateFolderSizeCache(FileManager.currentFolderId);
+            // 清理上传状态
+            uploadBtn.disabled = false;
+            fileInput.disabled = false;
+            fileInput.value = '';
+            const fileListContainer = document.getElementById('fileListContainer');
+            if (fileListContainer) {
+                fileListContainer.innerHTML = '';
+                fileListContainer.style.display = 'none';
+            }
+            // 隐藏进度条
+            progressContainer.style.display = 'none';
+        });
     }
 }
