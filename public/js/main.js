@@ -184,28 +184,49 @@ async function getFolderPath(folderId) {
 async function calculateFolderSize(folderId) {
     try {
         // 检查缓存
-    if (FileManager.folderSizeCache[folderId] !== undefined) {
-        return FileManager.folderSizeCache[folderId];
-    }
-    
+        if (FileManager.folderSizeCache[folderId] !== undefined) {
+            return FileManager.folderSizeCache[folderId];
+        }
+        
         // 检查是否正在计算中
         if (FileManager.calculatingSizes.has(folderId)) {
-            return 0; // 返回0，避免重复计算
+            // 如果正在计算中，等待计算完成
+            return new Promise((resolve) => {
+                const checkCache = () => {
+                    if (FileManager.folderSizeCache[folderId] !== undefined) {
+                        resolve(FileManager.folderSizeCache[folderId]);
+                    } else if (!FileManager.calculatingSizes.has(folderId)) {
+                        resolve(0); // 如果计算已结束但缓存中没有值，返回0
+                    } else {
+                        setTimeout(checkCache, 100); // 等待100毫秒后再次检查
+                    }
+                };
+                setTimeout(checkCache, 100);
+            });
         }
 
         FileManager.calculatingSizes.add(folderId);
 
-        const response = await fetch(`/api/folders/${folderId}/size`);
-                if (!response.ok) {
-            throw new Error('获取文件夹大小失败');
-        }
+        // 尝试使用API获取文件夹大小
+        try {
+            const response = await fetch(`/api/folders/${folderId}/size`);
+            if (response.ok) {
                 const data = await response.json();
-        const size = data.size || 0;
-
-        // 更新缓存
-        FileManager.folderSizeCache[folderId] = size;
+                const size = data.size || 0;
+                
+                // 更新缓存
+                FileManager.folderSizeCache[folderId] = size;
+                FileManager.calculatingSizes.delete(folderId);
+                
+                return size;
+            }
+        } catch (error) {
+            console.warn('通过API获取文件夹大小失败，将使用本地计算:', error);
+        }
+        
+        // 如果API获取失败，使用本地计算方法
+        const size = await calculateFolderSizeLocally(folderId);
         FileManager.calculatingSizes.delete(folderId);
-
         return size;
     } catch (error) {
         console.error('计算文件夹大小失败:', error);
@@ -216,31 +237,53 @@ async function calculateFolderSize(folderId) {
 
 // 本地计算文件夹大小（作为备选方案）
 function calculateFolderSizeLocally(folderId) {
-    try {
-        // 使用深度优先搜索递归计算
-        let totalSize = 0;
-        
-        function dfs(folder_id) {
-            // 获取当前文件夹的直接子文件和子文件夹
-            const children = allFiles.filter(file => file.parent_id == folder_id);
+    return new Promise((resolve, reject) => {
+        try {
+            // 检查缓存
+            if (FileManager.folderSizeCache[folderId] !== undefined) {
+                return resolve(FileManager.folderSizeCache[folderId]);
+            }
             
-            for (const child of children) {
-                if (child.is_folder) {
-                    // 递归计算子文件夹大小
-                    dfs(child.id);
-                } else {
-                    // 累加文件大小
-                    totalSize += parseInt(child.file_size || child.size || 0, 10);
+            // 使用深度优先搜索递归计算
+            let totalSize = 0;
+            const processedFolders = new Set(); // 防止循环引用导致的无限递归
+            
+            function dfs(folder_id) {
+                if (processedFolders.has(folder_id)) {
+                    return; // 避免重复处理同一文件夹
+                }
+                processedFolders.add(folder_id);
+                
+                // 获取当前文件夹的直接子文件和子文件夹
+                const children = FileManager.allFiles.filter(file => file.parent_id === folder_id);
+                
+                for (const child of children) {
+                    if (child.is_folder) {
+                        // 如果子文件夹已有缓存，直接使用
+                        if (FileManager.folderSizeCache[child.id] !== undefined) {
+                            totalSize += FileManager.folderSizeCache[child.id];
+                        } else {
+                            // 递归计算子文件夹大小
+                            dfs(child.id);
+                        }
+                    } else {
+                        // 累加文件大小
+                        totalSize += parseInt(child.file_size || child.size || 0, 10);
+                    }
                 }
             }
+            
+            dfs(folderId);
+            
+            // 更新缓存
+            FileManager.folderSizeCache[folderId] = totalSize;
+            
+            resolve(totalSize);
+        } catch (error) {
+            console.error('本地计算文件夹大小失败:', error);
+            reject(error);
         }
-        
-        dfs(folderId);
-        return totalSize;
-    } catch (error) {
-        console.error('本地计算文件夹大小失败:', error);
-        return 0;
-    }
+    });
 }
 
 // 加载文件列表
@@ -334,6 +377,12 @@ async function loadFiles(path = '') {
             currentPath: path
         });
         
+        // 更新文件列表后，如果标记了上传成功，更新当前文件夹的大小缓存
+        if (FileManager.uploadSuccess) {
+            FileManager.uploadSuccess = false;
+            await updateFolderCache(FileManager.currentFolderId);
+        }
+        
     } catch (error) {
         console.error('加载文件列表失败:', error);
         if (fileList) {
@@ -351,71 +400,45 @@ async function loadFiles(path = '') {
     }
 }
 
-// 排序文件
-function sortFiles(files, field = 'name', order = 'asc') {
-    try {
-        console.log('开始排序文件:', { field, order, filesCount: files.length });
+// 修改排序函数
+function sortFiles(files, sortBy, sortDirection) {
+    return [...files].sort((a, b) => {
+        // 总是将文件夹排在前面
+        if (a.is_folder && !b.is_folder) return -1;
+        if (!a.is_folder && b.is_folder) return 1;
         
-        if (!Array.isArray(files)) {
-            console.error('files参数不是数组');
-            return [];
+        let valA, valB;
+        
+        if (sortBy === 'name') {
+            valA = (a.name || a.filename || '').toLowerCase();
+            valB = (b.name || b.filename || '').toLowerCase();
+        } else if (sortBy === 'created_at') {
+            valA = new Date(a.created_at || a.modifiedAt || 0).getTime();
+            valB = new Date(b.created_at || b.modifiedAt || 0).getTime();
+        } else if (sortBy === 'size') {
+            if (a.is_folder) {
+                valA = FileManager.folderSizeCache[a.id] || 0;
+            } else {
+                valA = parseInt(a.file_size || a.size || 0, 10);
+            }
+            
+            if (b.is_folder) {
+                valB = FileManager.folderSizeCache[b.id] || 0;
+            } else {
+                valB = parseInt(b.file_size || b.size || 0, 10);
+            }
+        } else {
+            valA = a[sortBy] || 0;
+            valB = b[sortBy] || 0;
         }
         
-        const sortedFiles = [...files];
-        
-        sortedFiles.sort((a, b) => {
-            // 确保文件夹始终在最上方
-            if (a.is_folder !== b.is_folder) {
-                return b.is_folder - a.is_folder;
-            }
-            
-            // 根据不同字段进行排序
-            let valueA, valueB;
-            
-            switch (field) {
-                case 'name':
-                    valueA = a.filename || '';
-                    valueB = b.filename || '';
-                    break;
-                    
-                case 'size':
-                    valueA = parseInt(a.size || 0, 10);
-                    valueB = parseInt(b.size || 0, 10);
-                    break;
-                    
-                case 'created_at':
-                    valueA = new Date(a.created_at || 0).getTime();
-                    valueB = new Date(b.created_at || 0).getTime();
-                    break;
-                    
-                default:
-                    console.warn('未知的排序字段:', field);
-                    return 0;
-            }
-            
-            // 如果值相等，则按名称排序
-            if (valueA === valueB) {
-                return a.filename.localeCompare(b.filename);
-            }
-            
-            // 根据排序顺序返回结果
-            if (field === 'name') {
-                return order === 'asc' ? 
-                    valueA.localeCompare(valueB) : 
-                    valueB.localeCompare(valueA);
-            } else {
-                return order === 'asc' ? 
-                    (valueA < valueB ? -1 : 1) : 
-                    (valueA > valueB ? -1 : 1);
-            }
-        });
-        
-        console.log('文件排序完成，排序后文件数:', sortedFiles.length);
-        return sortedFiles;
-    } catch (error) {
-        console.error('文件排序出错:', error);
-        return files;
-    }
+        // 根据排序方向返回比较结果
+        if (sortDirection === 'asc') {
+            return valA > valB ? 1 : -1;
+        } else {
+            return valA < valB ? 1 : -1;
+        }
+    });
 }
 
 // 处理排序点击事件
@@ -425,21 +448,51 @@ function handleSort(field) {
     if (FileManager.sortField === field) {
         // 如果点击的是当前排序字段，切换排序顺序
         FileManager.sortOrder = FileManager.sortOrder === 'asc' ? 'desc' : 'asc';
-        } else {
+    } else {
         // 如果点击的是新字段，设置为升序
         FileManager.sortField = field;
         FileManager.sortOrder = 'asc';
     }
     
+    // 如果按大小排序，确保所有文件夹的大小都已计算
+    if (field === 'size') {
+        // 预计算所有显示的文件夹大小
+        const folderIds = FileManager.filteredFiles
+            .filter(file => file.is_folder)
+            .map(folder => folder.id);
+            
+        if (folderIds.length > 0) {
+            // 显示加载提示
+            showToast('正在计算文件夹大小，请稍候...', 'info');
+            
+            // 异步计算所有文件夹大小
+            Promise.all(folderIds.map(id => calculateFolderSize(id)))
+                .then(() => {
+                    // 完成后重新排序和渲染
+                    FileManager.filteredFiles = sortFiles(FileManager.filteredFiles, FileManager.sortField, FileManager.sortOrder);
+                    renderFileList();
+                    showToast('排序完成', 'success');
+                })
+                .catch(error => {
+                    console.error('计算文件夹大小失败:', error);
+                    showToast('部分文件夹大小计算失败', 'warning');
+                    // 即使有错误也尝试排序和渲染
+                    FileManager.filteredFiles = sortFiles(FileManager.filteredFiles, FileManager.sortField, FileManager.sortOrder);
+                    renderFileList();
+                });
+        } else {
+            // 没有文件夹，直接排序
+            FileManager.filteredFiles = sortFiles(FileManager.filteredFiles, FileManager.sortField, FileManager.sortOrder);
+            renderFileList();
+        }
+    } else {
+        // 其他字段直接排序
+        FileManager.filteredFiles = sortFiles(FileManager.filteredFiles, FileManager.sortField, FileManager.sortOrder);
+        renderFileList();
+    }
+    
     // 更新排序图标
     updateSortIcon();
-    
-    // 对过滤后的文件列表进行排序
-    if (FileManager.filteredFiles) {
-        FileManager.filteredFiles = sortFiles(FileManager.filteredFiles, FileManager.sortField, FileManager.sortOrder);
-    // 重新渲染文件列表
-    renderFileList();
-    }
     
     console.log('排序完成:', { 
         field: FileManager.sortField, 
@@ -536,6 +589,7 @@ function renderFileList() {
             nameLink.textContent = file.name || file.filename;
             nameLink.className = 'file-name-cell';
             nameLink.setAttribute('data-full-name', file.name || file.filename);
+            nameLink.title = file.name || file.filename; // 添加title属性
             nameLink.onclick = function(e) {
                 e.preventDefault();
                 loadFiles(file.id);
@@ -553,6 +607,7 @@ function renderFileList() {
             nameSpan.textContent = file.name || file.filename;
             nameSpan.className = 'file-name-cell';
             nameSpan.setAttribute('data-full-name', file.name || file.filename);
+            nameSpan.title = file.name || file.filename; // 添加title属性
             nameContainer.appendChild(nameSpan);
             
             // 检查文件名是否被截断
@@ -567,10 +622,33 @@ function renderFileList() {
         nameCell.appendChild(nameContainer);
         row.appendChild(nameCell);
         
-        // 大小
+        // 大小 - 文件夹显示递归计算的总大小
         const sizeCell = document.createElement('td');
         sizeCell.className = 'col-size';
-        sizeCell.textContent = file.is_folder ? '-' : formatSize(file.size || file.file_size || 0);
+        
+        if (file.is_folder) {
+            // 初始显示计算中...
+            sizeCell.textContent = '计算中...';
+            sizeCell.dataset.folderId = file.id;
+            
+            // 异步计算文件夹大小
+            calculateFolderSizeLocally(file.id).then(size => {
+                // 更新大小显示
+                if (size === 0) {
+                    sizeCell.textContent = '0 B';
+                } else {
+                    sizeCell.textContent = formatSize(size);
+                }
+            }).catch(error => {
+                console.error('计算文件夹大小出错:', error);
+                sizeCell.textContent = '-';
+            });
+        } else {
+            // 使用file_size或size字段
+            const fileSize = parseInt(file.file_size || file.size || 0, 10);
+            sizeCell.textContent = formatSize(fileSize);
+        }
+        
         row.appendChild(sizeCell);
         
         // 创建时间
@@ -1274,20 +1352,24 @@ async function showBatchMoveModal() {
 
 // 移动文件
 async function moveFile() {
-    const selectedFolder = document.querySelector('input[name="target_folder"]:checked');
-    if (!selectedFolder) {
-        showToast('请选择目标文件夹', 'error');
-        return;
-    }
-    
-    const targetFolderId = selectedFolder.value === 'null' ? null : selectedFolder.value;
-    
-    console.log('移动文件/文件夹:', {
-        fileId: FileManager.selectedFileId,  // 使用FileManager.selectedFileId
-        targetFolderId: targetFolderId
-    });
-    
     try {
+        // 获取目标文件夹ID
+        const targetFolderRadio = document.querySelector('input[name="folderSelection"]:checked');
+        if (!targetFolderRadio) {
+            showToast('请选择目标文件夹', 'error');
+            return;
+        }
+        
+        // 保存源文件夹和目标文件夹id
+        const sourceParentId = FileManager.movingFileId ? 
+            FileManager.allFiles.find(f => f.id === FileManager.movingFileId)?.parent_id : null;
+        const targetFolderId = targetFolderRadio.value;
+        
+        console.log('移动文件/文件夹:', {
+            fileId: FileManager.selectedFileId,  // 使用FileManager.selectedFileId
+            targetFolderId: targetFolderId
+        });
+        
         const response = await fetch(`/api/files/${FileManager.selectedFileId}/move`, {  // 使用FileManager.selectedFileId
             method: 'PUT',
             headers: { 
@@ -1436,50 +1518,35 @@ async function deleteFile(id, isFolder) {
 // 实际执行删除操作
 async function performDelete(fileId) {
     try {
-        console.log('开始删除文件:', fileId);
+        // 保存父文件夹id，用于后续更新缓存
+        const fileToDelete = FileManager.allFiles.find(f => f.id === fileId);
+        const parentId = fileToDelete ? fileToDelete.parent_id : null;
+        
+        showToast('正在删除...', 'info');
         
         const response = await fetch(`/api/files/${fileId}`, {
-                    method: 'DELETE',
+            method: 'DELETE',
             headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json'
-            },
-            credentials: 'include'  // 确保请求包含cookie
-        });
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        }).then(res => res.json());
         
-        console.log('删除请求响应:', {
-            status: response.status,
-            statusText: response.statusText
-        });
-        
-        const contentType = response.headers.get('content-type');
-        let data;
-        
-        if (contentType && contentType.includes('application/json')) {
-            data = await response.json();
-    } else {
-            const text = await response.text();
-            console.error('非JSON响应:', text);
-            throw new Error('服务器返回了非JSON格式的响应');
+        if (response.success) {
+            showToast('删除成功', 'success');
+            
+            // 删除成功后更新父文件夹缓存
+            if (parentId) {
+                await updateFolderCache(parentId);
+            }
+            
+            // 重新加载文件列表
+            await loadFiles();
+        } else {
+            showToast('删除失败: ' + (response.message || '未知错误'), 'error');
         }
-        
-        if (!response.ok) {
-            console.error('删除失败:', {
-                status: response.status,
-                data: data
-            });
-            throw new Error(data.message || data.error || '删除文件失败');
-        }
-        
-        console.log('删除成功:', data);
-        return data;
     } catch (error) {
-        console.error('删除文件时出错:', {
-            fileId: fileId,
-            error: error.message,
-            stack: error.stack
-        });
-        throw error;
+        console.error('删除失败:', error);
+        showToast('删除失败: ' + error.message, 'error');
     }
 }
 
@@ -1622,104 +1689,35 @@ async function deleteSelected() {
 
 // 批量移动文件
 async function batchMoveFiles() {
-    const selectedFolder = document.querySelector('input[name="batch_target_folder"]:checked');
-    if (!selectedFolder) {
-        showToast('请选择目标文件夹', 'error');
-        return;
-    }
-    
-    const selectedFiles = Array.from(document.querySelectorAll('.file-checkbox:checked')).map(cb => cb.value);
-    const targetFolderId = selectedFolder.value === 'null' ? null : selectedFolder.value;
-    
-    // 创建进度条容器
-    const progressContainer = document.createElement('div');
-    progressContainer.className = 'progress-container mt-3';
-    progressContainer.innerHTML = `
-        <div class="progress">
-            <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                 role="progressbar" style="width: 0%">0%</div>
-        </div>
-        <div class="text-center mt-2">正在移动文件...</div>
-    `;
-    
-    // 添加到模态框
-    const modalBody = FileManager.batchMoveModal._element.querySelector('.modal-body');
-    modalBody.appendChild(progressContainer);
-    
-    // 禁用确认按钮
-    const confirmBtn = FileManager.batchMoveModal._element.querySelector('.modal-footer .btn-primary');
-    confirmBtn.disabled = true;
-    
     try {
-        // 使用 Promise.all 并行处理移动请求
-        const totalFiles = selectedFiles.length;
-        let successCount = 0;
-        let failedCount = 0;
+        // ... existing code ...
         
-        // 创建所有移动请求
-        const movePromises = selectedFiles.map(async (fileId, index) => {
-            try {
-                const response = await fetch(`/api/files/${fileId}/move`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ newParentId: targetFolderId })
-                });
-                
-                if (response.ok) {
-                    successCount++;
-                } else {
-                    failedCount++;
-                    console.error(`移动文件 ${fileId} 失败:`, await response.text());
-                }
-                
-                // 更新进度
-                const progress = Math.round(((index + 1) / totalFiles) * 100);
-                const progressBar = progressContainer.querySelector('.progress-bar');
-                progressBar.style.width = `${progress}%`;
-                progressBar.textContent = `${progress}%`;
-                
-            } catch (error) {
-                failedCount++;
-                console.error(`移动文件 ${fileId} 时发生错误:`, error);
+        // 保存源文件夹ID集合
+        const sourceParentIds = new Set();
+        selectedFiles.forEach(fileId => {
+            const file = FileManager.allFiles.find(f => f.id === fileId);
+            if (file && file.parent_id) {
+                sourceParentIds.add(file.parent_id);
             }
         });
         
-        // 等待所有移动操作完成
-        await Promise.all(movePromises);
+        // ... existing batch move logic ...
         
-        // 显示结果
-        if (successCount === totalFiles) {
-            showToast('批量移动成功');
-        } else if (successCount > 0) {
-            showToast(`部分文件移动成功 (${successCount}/${totalFiles})`, 'warning');
+        if (response.success) {
+            // 更新所有源文件夹和目标文件夹的缓存
+            for (const parentId of sourceParentIds) {
+                await updateFolderCache(parentId);
+            }
+            if (targetFolderId) {
+                await updateFolderCache(targetFolderId);
+            }
+            
+            // ... existing code ...
         } else {
-            showToast('所有文件移动失败', 'error');
+            // ... existing code ...
         }
-        
-        // 关闭模态框并刷新文件列表
-        FileManager.batchMoveModal.hide();
-        
-        // 如果当前页将没有内容了，且不是第一页，则回到上一页
-        const remainingCount = FileManager.allFiles.length - selectedFiles.length;
-        const currentPageStart = (FileManager.currentPage - 1) * FileManager.pageSize;
-        if (remainingCount <= currentPageStart && FileManager.currentPage > 1) {
-            FileManager.currentPage--;
-        }
-        
-        loadFiles();
-        
     } catch (error) {
-        console.error('批量移动出错:', error);
-        showToast('批量移动失败', 'error');
-    } finally {
-        // 清理进度条
-        if (progressContainer.parentNode) {
-            progressContainer.parentNode.removeChild(progressContainer);
-        }
-        // 恢复确认按钮
-        if (confirmBtn) {
-            confirmBtn.disabled = false;
-        }
+        // ... existing code ...
     }
 }
 
@@ -2347,20 +2345,42 @@ async function previewFile(fileId) {
 
 // 在文件上传成功后更新文件夹大小缓存
 async function updateFolderSizeCache(folderId) {
-    // 清除当前文件夹的缓存
-    delete FileManager.folderSizeCache[folderId];
-    
-    // 清除所有父文件夹的缓存
-    let currentId = folderId;
-    while (currentId) {
-        const parent = FileManager.allFiles.find(f => f.id === currentId);
-        if (!parent || !parent.parent_id) break;
-        currentId = parent.parent_id;
-        delete FileManager.folderSizeCache[currentId];
+    try {
+        console.log('更新文件夹大小缓存:', folderId);
+        if (!folderId) return;
+        
+        // 清除当前文件夹的缓存
+        delete FileManager.folderSizeCache[folderId];
+        
+        // 清除所有父文件夹的缓存
+        let currentId = folderId;
+        const processed = new Set(); // 防止循环引用
+        
+        while (currentId && !processed.has(currentId)) {
+            processed.add(currentId);
+            const parent = FileManager.allFiles.find(f => f.id === currentId);
+            if (!parent || !parent.parent_id) break;
+            
+            currentId = parent.parent_id;
+            delete FileManager.folderSizeCache[currentId];
+        }
+        
+        // 重新计算当前文件夹大小
+        await calculateFolderSize(folderId);
+        
+        // 如果当前正在按大小排序，需要重新排序和渲染列表
+        if (FileManager.sortField === 'size' && FileManager.filteredFiles) {
+            FileManager.filteredFiles = sortFiles(FileManager.filteredFiles, FileManager.sortField, FileManager.sortOrder);
+            renderFileList();
+        }
+        
+        // 更新文件统计信息
+        updateFileStats();
+        
+        console.log('文件夹缓存更新完成:', folderId);
+    } catch (error) {
+        console.error('更新文件夹缓存失败:', error);
     }
-    
-    // 重新计算当前文件夹大小
-    await calculateFolderSize(folderId);
 }
 
 // 修改文件上传成功后的处理
@@ -2444,4 +2464,190 @@ function updateFileStats() {
             `;
         }
     }
+}
+
+// 文件操作后更新相关文件夹缓存
+async function updateFolderCache(folderId) {
+    if (!folderId) return;
+    
+    try {
+        console.log('开始更新文件夹缓存:', folderId);
+        
+        // 清除当前文件夹的缓存
+        delete FileManager.folderSizeCache[folderId];
+        
+        // 清除所有父文件夹的缓存
+        let currentId = folderId;
+        const processed = new Set(); // 防止循环引用
+        
+        while (currentId && !processed.has(currentId)) {
+            processed.add(currentId);
+            const parent = FileManager.allFiles.find(f => f.id === currentId);
+            if (!parent || !parent.parent_id) break;
+            
+            currentId = parent.parent_id;
+            delete FileManager.folderSizeCache[currentId];
+        }
+        
+        // 重新计算当前文件夹大小
+        await calculateFolderSizeLocally(folderId);
+        
+        // 如果当前正在按大小排序，需要重新渲染列表
+        if (FileManager.sortField === 'size') {
+            renderFileList();
+        }
+        
+        console.log('文件夹缓存更新完成:', folderId);
+    } catch (error) {
+        console.error('更新文件夹缓存失败:', error);
+    }
+}
+
+// 修改上传成功后的处理逻辑
+async function uploadSuccess(file) {
+    // ... existing code ...
+    
+    // 更新父文件夹的大小缓存
+    if (file.parent_id) {
+        await updateFolderCache(file.parent_id);
+    }
+}
+
+// 修改deleteFile函数
+async function deleteFile(id, isFolder) {
+    // ... existing code ...
+    
+    // 保存父文件夹id，用于后续更新缓存
+    const fileToDelete = FileManager.allFiles.find(f => f.id === id);
+    const parentId = fileToDelete ? fileToDelete.parent_id : null;
+    
+    // ... existing delete logic ...
+    
+    // 删除成功后更新父文件夹缓存
+    if (parentId) {
+        await updateFolderCache(parentId);
+    }
+}
+
+// 修改moveFile函数
+async function moveFile() {
+    // ... existing code ...
+    
+    // 保存源文件夹和目标文件夹id
+    const sourceParentId = FileManager.movingFileId ? 
+        FileManager.allFiles.find(f => f.id === FileManager.movingFileId)?.parent_id : null;
+    
+    // ... existing move logic ...
+    
+    // 更新源文件夹和目标文件夹的缓存
+    if (sourceParentId) {
+        await updateFolderCache(sourceParentId);
+    }
+    if (targetFolderId && targetFolderId !== sourceParentId) {
+        await updateFolderCache(targetFolderId);
+    }
+}
+
+// 删除选定的文件
+function deleteSelectedFiles() {
+    const selectedFileIds = Array.from(document.querySelectorAll('.file-checkbox:checked')).map(cb => cb.value);
+    if (selectedFileIds.length === 0) {
+        showToast('请选择要删除的文件', 'warning');
+        return;
+    }
+
+    // 获取所有选定文件的父文件夹ID，用于后续更新缓存
+    const parentFolderIds = new Set();
+    selectedFileIds.forEach(id => {
+        const file = FileManager.allFiles.find(f => f.id.toString() === id.toString());
+        if (file && file.parent_id) {
+            parentFolderIds.add(file.parent_id);
+        }
+    });
+
+    fetch('/api/delete', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ids: selectedFileIds })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // 更新所有相关文件夹的缓存
+            const updatePromises = Array.from(parentFolderIds).map(folderId => updateFolderSizeCache(folderId));
+            
+            Promise.all(updatePromises).then(() => {
+                loadCurrentFolder();
+                showToast('删除成功');
+            });
+        } else {
+            showToast('删除失败: ' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('删除文件出错:', error);
+        showToast('删除文件失败，请重试', 'error');
+    });
+}
+
+// 移动文件
+function moveFiles() {
+    const targetFolderId = document.querySelector('input[name="target_folder"]:checked')?.value;
+    
+    if (!targetFolderId) {
+        showToast('请选择目标文件夹', 'error');
+        return;
+    }
+    
+    if (!FileManager.clipboard || !FileManager.clipboard.files || FileManager.clipboard.files.length === 0) {
+        showToast('没有选择要移动的文件', 'error');
+        return;
+    }
+    
+    // 获取源文件夹ID集合，用于后续更新缓存
+    const sourceParentIds = new Set();
+    FileManager.clipboard.files.forEach(file => {
+        if (file.parent_id) {
+            sourceParentIds.add(file.parent_id);
+        }
+    });
+
+    fetch('/api/move', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            ids: FileManager.clipboard.files.map(f => f.id),
+            destination: targetFolderId === 'null' ? null : targetFolderId
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // 更新所有相关文件夹的缓存
+            const foldersToUpdate = new Set([...sourceParentIds]);
+            if (targetFolderId !== 'null') {
+                foldersToUpdate.add(targetFolderId);
+            }
+            
+            const updatePromises = Array.from(foldersToUpdate).map(folderId => 
+                updateFolderSizeCache(folderId)
+            );
+            
+            Promise.all(updatePromises).then(() => {
+                FileManager.clipboard = { action: null, files: [] };
+                loadCurrentFolder();
+                showToast('移动成功');
+            });
+        } else {
+            showToast('移动失败: ' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('移动文件出错:', error);
+        showToast('移动文件失败，请重试', 'error');
+    });
 }
