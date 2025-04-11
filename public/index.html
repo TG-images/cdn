@@ -613,8 +613,23 @@
                         await initPage();
                         console.log('页面初始化完成，开始加载上传功能...');
                         
-                        // 等待一小段时间确保DOM完全加载
-                        await new Promise(resolve => setTimeout(resolve, 500));
+                        // 等待FileManager初始化完成
+                        let fileManagerReady = false;
+                        let attempts = 0;
+                        const maxAttempts = 50;
+                        
+                        while (!fileManagerReady && attempts < maxAttempts) {
+                            if (window.FileManager && window.FileManager.currentFolderId !== undefined) {
+                                fileManagerReady = true;
+                                break;
+                            }
+                            await new Promise(resolve => setTimeout(resolve, 100));
+                            attempts++;
+                        }
+                        
+                        if (!fileManagerReady) {
+                            throw new Error('FileManager初始化超时');
+                        }
                         
                         // 在FileManager初始化完成后加载upload.js
                         const uploadScript = document.createElement('script');
@@ -627,14 +642,22 @@
                                     console.log('上传功能初始化成功');
                                 } catch (error) {
                                     console.error('初始化上传功能失败:', error);
-                                    showToast('初始化上传功能失败：' + error.message, 'error');
+                                    if (typeof showToast === 'function') {
+                                        showToast('初始化上传功能失败：' + error.message, 'error');
+                                    } else {
+                                        console.error('showToast函数不可用');
+                                    }
                                 }
                             }
                         };
                         document.body.appendChild(uploadScript);
                     } catch (error) {
                         console.error('页面初始化失败:', error);
-                        showToast('页面初始化失败：' + error.message, 'error');
+                        if (typeof showToast === 'function') {
+                            showToast('页面初始化失败：' + error.message, 'error');
+                        } else {
+                            console.error('showToast函数不可用');
+                        }
                     }
                 }
             } catch (error) {
