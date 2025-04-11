@@ -1207,130 +1207,51 @@ async function deleteFile(id, isFolder) {
 }
 
 // 实际执行删除操作
-async function performDelete() {
-    console.log('执行删除操作:', { 
-        pendingDeleteId: FileManager.pendingDeleteId, 
-        pendingDeleteIsFolder: FileManager.pendingDeleteIsFolder,
-        pendingBatchDeleteFiles: FileManager.pendingBatchDeleteFiles 
+async function performDelete(fileId) {
+  try {
+    console.log('开始删除文件:', fileId);
+    
+    const response = await fetch(`/api/files/${fileId}`, {
+      method: 'DELETE',
+      headers: {
+        'Accept': 'application/json'
+      }
     });
     
-    // 单个文件删除
-    if (FileManager.pendingDeleteId !== null) {
-        try {
-            console.log(`发送删除请求: /api/files/${FileManager.pendingDeleteId}`);
-            
-            const response = await fetch(`/api/files/${FileManager.pendingDeleteId}`, {
-                method: 'DELETE',
-                credentials: 'include',
-                headers: {
-                    'Accept': 'application/json'
-                }
-            });
-            
-            console.log('删除响应状态:', response.status);
-            const responseText = await response.text();
-            console.log('删除响应内容:', responseText);
-            
-            if (response.ok) {
-                showToast('删除成功');
-                // 如果当前页没有内容了，且不是第一页，则回到上一页
-                if (FileManager.allFiles.length <= FileManager.pageSize && FileManager.currentPage > 1) {
-                    FileManager.currentPage--;
-                }
-                loadFiles();
-            } else {
-                let errorMessage;
-                try {
-                    const responseData = JSON.parse(responseText);
-                    errorMessage = responseData.error || responseData.message || '未知错误';
-                } catch (e) {
-                    console.error('解析响应JSON失败:', e);
-                    errorMessage = responseText || '服务器返回了非JSON格式的数据';
-                }
-                console.error('删除失败:', {
-                    status: response.status,
-                    statusText: response.statusText,
-                    responseText: responseText
-                });
-                showToast(`删除失败: ${errorMessage}`, 'error');
-            }
-        } catch (error) {
-            console.error('删除操作出错:', error);
-            showToast(`删除失败: ${error.message}`, 'error');
-        } finally {
-            // 关闭确认对话框
-            if (FileManager.confirmDeleteModal) {
-                FileManager.confirmDeleteModal.hide();
-            }
-            
-            // 重置待删除项
-            FileManager.pendingDeleteId = null;
-            FileManager.pendingDeleteIsFolder = false;
-        }
-    }
-    // 批量删除
-    else if (FileManager.pendingBatchDeleteFiles !== null && FileManager.pendingBatchDeleteFiles.length > 0) {
-        console.log('执行批量删除:', FileManager.pendingBatchDeleteFiles);
-        
-        let success = true;
-        let successCount = 0;
-        let failCount = 0;
-        
-        for (const id of FileManager.pendingBatchDeleteFiles) {
-            try {
-                console.log(`发送批量删除请求: /api/files/${id}`);
-                
-                const response = await fetch(`/api/files/${id}`, {
-                    method: 'DELETE',
-                    credentials: 'include'
-                });
-                
-                console.log(`ID ${id} 删除响应状态:`, response.status);
-                
-                if (response.ok) {
-                    successCount++;
-                } else {
-                    failCount++;
-                    success = false;
-                }
-            } catch (error) {
-                console.error(`ID ${id} 删除错误:`, error);
-                failCount++;
-                success = false;
-            }
-        }
-        
-        if (success) {
-            showToast('批量删除成功');
-        } else if (successCount > 0) {
-            showToast(`部分文件删除成功 (${successCount}/${FileManager.pendingBatchDeleteFiles.length})`, 'warning');
-        } else {
-            showToast('批量删除失败', 'error');
-        }
-        
-        // 如果当前页将没有内容了，且不是第一页，则回到上一页
-        const remainingCount = FileManager.allFiles.length - FileManager.pendingBatchDeleteFiles.length;
-        const currentPageStart = (FileManager.currentPage - 1) * FileManager.pageSize;
-        if (remainingCount <= currentPageStart && FileManager.currentPage > 1) {
-            FileManager.currentPage--;
-        }
-        
-        // 重新加载文件列表
-        loadFiles();
-        
-        // 关闭确认对话框
-        if (FileManager.confirmDeleteModal) {
-            FileManager.confirmDeleteModal.hide();
-        }
-        
-        // 重置待删除项
-        FileManager.pendingBatchDeleteFiles = null;
+    console.log('删除请求响应:', {
+      status: response.status,
+      statusText: response.statusText
+    });
+    
+    const contentType = response.headers.get('content-type');
+    let data;
+    
+    if (contentType && contentType.includes('application/json')) {
+      data = await response.json();
     } else {
-        console.warn('没有指定要删除的文件');
-        if (FileManager.confirmDeleteModal) {
-            FileManager.confirmDeleteModal.hide();
-        }
+      const text = await response.text();
+      console.error('非JSON响应:', text);
+      throw new Error('服务器返回了非JSON格式的响应');
     }
+    
+    if (!response.ok) {
+      console.error('删除失败:', {
+        status: response.status,
+        data: data
+      });
+      throw new Error(data.message || data.error || '删除文件失败');
+    }
+    
+    console.log('删除成功:', data);
+    return data;
+  } catch (error) {
+    console.error('删除文件时出错:', {
+      fileId: fileId,
+      error: error.message,
+      stack: error.stack
+    });
+    throw error;
+  }
 }
 
 // 全选/取消全选
