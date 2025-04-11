@@ -22,7 +22,8 @@ window.FileManager = {
     confirmDeleteModal: null,
     renameModal: null,
     // 添加进行中标记，避免重复请求
-    pendingFolderSizeRequests: {}
+    pendingFolderSizeRequests: {},
+    calculatingSizes: new Set()
 };
 
 // 初始化 Modal
@@ -178,38 +179,33 @@ async function getFolderPath(folderId) {
 // 计算文件夹大小
 async function calculateFolderSize(folderId) {
     try {
-        // 如果缓存中有值，直接返回
+        // 检查缓存
         if (FileManager.folderSizeCache[folderId] !== undefined) {
             return FileManager.folderSizeCache[folderId];
         }
 
-        // 如果已经在计算中，返回0
-        if (FileManager.pendingFolderSizeRequests[folderId]) {
-            return 0;
+        // 检查是否正在计算中
+        if (FileManager.calculatingSizes.has(folderId)) {
+            return 0; // 返回0，避免重复计算
         }
 
-        // 标记为计算中
-        FileManager.pendingFolderSizeRequests[folderId] = true;
+        FileManager.calculatingSizes.add(folderId);
 
         const response = await fetch(`/api/folders/${folderId}/size`);
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            throw new Error('获取文件夹大小失败');
         }
-        
         const data = await response.json();
         const size = data.size || 0;
-        
+
         // 更新缓存
         FileManager.folderSizeCache[folderId] = size;
-        
-        // 清除计算中标记
-        delete FileManager.pendingFolderSizeRequests[folderId];
-        
+        FileManager.calculatingSizes.delete(folderId);
+
         return size;
     } catch (error) {
-        console.error('Error calculating folder size:', error);
-        // 清除计算中标记
-        delete FileManager.pendingFolderSizeRequests[folderId];
+        console.error('计算文件夹大小失败:', error);
+        FileManager.calculatingSizes.delete(folderId);
         return 0;
     }
 }
@@ -313,71 +309,35 @@ async function loadFiles() {
 
 // 排序文件
 function sortFiles(files, field = 'name', order = 'asc') {
-    return [...files].sort((a, b) => {
-        if (field === 'name') {
-            // 名称排序逻辑
-            const splitName = (name) => {
-                // 拆分文件名与扩展名
-                const lastDotIndex = name.lastIndexOf('.');
-                if (lastDotIndex === -1) return { name, ext: '' };
-                return {
-                    name: name.slice(0, lastDotIndex),
-                    ext: name.slice(lastDotIndex + 1)
-                };
-            };
-
-            // 文件夹始终在文件前面
-            if (a.is_folder !== b.is_folder) {
-                return a.is_folder ? -1 : 1;
-            }
-
-            // 如果都是文件夹或都是文件，按名称排序
-            const aNameParts = splitName(a.filename || a.name || '');
-            const bNameParts = splitName(b.filename || b.name || '');
-            
-            // 如果是文件且扩展名不同，可以选择按扩展名排序
-            if (!a.is_folder && !b.is_folder && aNameParts.ext !== bNameParts.ext) {
-                return order === 'asc' ? 
-                    aNameParts.ext.localeCompare(bNameParts.ext) : 
-                    bNameParts.ext.localeCompare(aNameParts.ext);
-            }
-            
-            // 按名称排序
-            return order === 'asc' ? 
-                (a.filename || a.name || '').localeCompare(b.filename || b.name || '') : 
-                (b.filename || b.name || '').localeCompare(a.filename || a.name || '');
-            
-        } else if (field === 'size') {
-            // 文件大小排序
-            let aSize = a.size || 0;
-            let bSize = b.size || 0;
-            
-            // 如果是文件夹，使用缓存的大小
-            if (a.is_folder && FileManager.folderSizeCache[a.id] !== undefined) {
-                aSize = FileManager.folderSizeCache[a.id];
-            }
-            if (b.is_folder && FileManager.folderSizeCache[b.id] !== undefined) {
-                bSize = FileManager.folderSizeCache[b.id];
-            }
-            
-            // 如果文件夹大小未缓存，尝试将文件夹排在最后或最前
-            if (a.is_folder && FileManager.folderSizeCache[a.id] === undefined) {
-                return order === 'asc' ? -1 : 1;
-            }
-            if (b.is_folder && FileManager.folderSizeCache[b.id] === undefined) {
-                return order === 'asc' ? 1 : -1;
-            }
-            
-            // 正常排序
-            return order === 'asc' ? aSize - bSize : bSize - aSize;
-            
-        } else if (field === 'created_at') {
-            const aDate = new Date(a.created_at);
-            const bDate = new Date(b.created_at);
-            return order === 'asc' ? aDate - bDate : bDate - aDate;
+    const sortedFiles = [...files];
+    
+    sortedFiles.sort((a, b) => {
+        // 确保文件夹始终在最上方
+        if (a.is_folder !== b.is_folder) {
+            return b.is_folder - a.is_folder;
         }
-        return 0;
+        
+        // 如果是文件夹，则按名称排序
+        if (a.is_folder && b.is_folder) {
+            return a.name.localeCompare(b.name);
+        }
+        
+        // 其他情况按指定字段排序
+        let valueA = a[field];
+        let valueB = b[field];
+        
+        if (field === 'size') {
+            valueA = a.is_folder ? FileManager.folderSizeCache[a.id] || 0 : a.size;
+            valueB = b.is_folder ? FileManager.folderSizeCache[b.id] || 0 : b.size;
+        }
+        
+        if (valueA === valueB) return 0;
+        return order === 'asc' ? 
+            (valueA < valueB ? -1 : 1) : 
+            (valueA > valueB ? -1 : 1);
     });
+    
+    return sortedFiles;
 }
 
 // 处理排序点击事件
@@ -415,144 +375,124 @@ function updateSortIcon() {
 
 // 渲染文件列表（带分页）
 async function renderFileList() {
-    // 防御性代码，确保allFiles是数组
-    if (FileManager.allFiles && !Array.isArray(FileManager.allFiles)) {
-        console.warn('allFiles不是数组，尝试修复:', FileManager.allFiles);
-        if (FileManager.allFiles.files && Array.isArray(FileManager.allFiles.files)) {
-            FileManager.allFiles = FileManager.allFiles.files;
-        } else {
-            console.error('无法修复allFiles，重置为空数组');
-            FileManager.allFiles = [];
-        }
-    }
-    
-    console.log('Rendering file list, total files:', FileManager.allFiles.length);
-    const tbody = document.getElementById('fileList');
-    tbody.innerHTML = '';
-    
-    if (FileManager.allFiles.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center">当前文件夹为空</td></tr>';
-        return;
-    }
-    
-    // 优化：限制并发请求数量，只预先计算当前页的文件夹大小
-    const sortedFiles = sortFiles(FileManager.allFiles, FileManager.currentSortField, FileManager.currentSortOrder);
-    
-    // 计算分页
-    FileManager.totalPages = Math.ceil(sortedFiles.length / FileManager.pageSize);
-    if (FileManager.currentPage > FileManager.totalPages && FileManager.totalPages > 0) {
-        FileManager.currentPage = FileManager.totalPages;
-    }
-    
-    console.log('Pagination info:', {
-        currentPage: FileManager.currentPage,
-        totalPages: FileManager.totalPages,
-        pageSize: FileManager.pageSize,
-        totalFiles: sortedFiles.length
-    });
-    
-    // 计算当前页的文件范围
+    const fileList = document.getElementById('fileList');
+    if (!fileList) return;
+
     const start = (FileManager.currentPage - 1) * FileManager.pageSize;
-    const end = Math.min(start + FileManager.pageSize, sortedFiles.length);
-    const currentPageFiles = sortedFiles.slice(start, end);
-    
-    // 更新分页控件
-    updatePagination(sortedFiles.length);
-    
-    // 仅计算当前页文件夹的大小，减少API请求
-    const folderSizePromises = [];
-    
-    currentPageFiles.forEach(file => {
-        if (file.is_folder && FileManager.folderSizeCache[file.id] === undefined) {
-            const promise = calculateFolderSize(file.id)
-                .then(size => ({ id: file.id, size }));
-            folderSizePromises.push({ 
-                id: file.id,
-                promise
-            });
+    const end = start + FileManager.pageSize;
+    const filesToShow = FileManager.filteredFiles.slice(start, end);
+
+    fileList.innerHTML = '';
+    let index = start + 1;
+
+    for (const file of filesToShow) {
+        const row = document.createElement('tr');
+        row.dataset.id = file.id;
+        row.dataset.isFolder = file.is_folder;
+
+        // 添加复选框
+        const checkboxCell = document.createElement('td');
+        checkboxCell.className = 'col-checkbox';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'file-checkbox';
+        checkbox.dataset.id = file.id;
+        checkboxCell.appendChild(checkbox);
+        row.appendChild(checkboxCell);
+
+        // 添加序号
+        const numberCell = document.createElement('td');
+        numberCell.className = 'col-number';
+        numberCell.textContent = index++;
+        row.appendChild(numberCell);
+
+        // 添加名称
+        const nameCell = document.createElement('td');
+        nameCell.className = 'col-name';
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'd-flex align-items-center';
+        
+        const icon = document.createElement('i');
+        icon.className = file.is_folder ? 'bi bi-folder me-2' : 'bi bi-file-earmark me-2';
+        nameDiv.appendChild(icon);
+        
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = file.name;
+        nameDiv.appendChild(nameSpan);
+        
+        nameCell.appendChild(nameDiv);
+        row.appendChild(nameCell);
+
+        // 添加大小
+        const sizeCell = document.createElement('td');
+        sizeCell.className = 'col-size';
+        if (file.is_folder) {
+            const size = FileManager.folderSizeCache[file.id] !== undefined ? 
+                FileManager.folderSizeCache[file.id] : 0;
+            sizeCell.textContent = formatSize(size);
+        } else {
+            sizeCell.textContent = formatSize(file.size);
         }
-    });
-    
-    console.log('Current page files:', {
-        start,
-        end,
-        filesCount: currentPageFiles.length,
-        folderPromises: folderSizePromises.length
-    });
-    
-    // 显示文件列表，先不显示文件夹大小
-    currentPageFiles.forEach((file, index) => {
-        const actualIndex = start + index + 1;
-        const tr = document.createElement('tr');
+        row.appendChild(sizeCell);
+
+        // 添加日期
+        const dateCell = document.createElement('td');
+        dateCell.className = 'col-date';
+        dateCell.textContent = moment(file.created_at).format('YYYY-MM-DD HH:mm:ss');
+        row.appendChild(dateCell);
+
+        // 添加操作按钮
+        const actionsCell = document.createElement('td');
+        actionsCell.className = 'col-actions';
+        const btnGroup = document.createElement('div');
+        btnGroup.className = 'btn-group';
         
-        let fileSize = parseInt(file.file_size || file.size || 0, 10);
-        
-        // 检查文件是否支持预览
-        const canPreview = !file.is_folder && fileSize <= 20 * 1024 * 1024; // 小于等于20MB
-        const fileName = file.filename || file.name || '';
-        const fileExt = fileName.split('.').pop().toLowerCase();
-        const previewableExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'mp4', 'mp3', 'wav', 'webm', 'ogg', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
-        const showPreviewBtn = canPreview && previewableExts.includes(fileExt);
-        
-        tr.innerHTML = `
-            <td><input type="checkbox" class="file-checkbox" value="${file.id}"></td>
-            <td>${actualIndex}</td>
-            <td style="text-align: left; padding-left: 8px;">${file.is_folder ? '📁 ' : '📄 '}${
-                file.is_folder 
-                ? `<a href="#" class="folder-link" data-id="${file.id}" title="${file.filename || file.name}" style="text-align: left;">${file.filename || file.name}</a>`
-                : `<span class="file-name" style="text-align: left; display: inline-block;" title="${file.filename || file.name}">${file.filename || file.name}</span>`
-            }</td>
-            <td class="file-size" data-id="${file.id}" style="text-align: left;">${formatSize(fileSize)}</td>
-            <td style="text-align: left;">${moment(file.created_at).format('YYYY-MM-DD HH:mm:ss')}</td>
-            <td class="actions">
-                <div class="btn-group" role="group">
-                    <button class="btn btn-sm btn-warning" onclick="showRenameModal(${file.id}, '${(file.filename || file.name).replace(/'/g, "\\'")}')">重命名</button>
-                    <button class="btn btn-sm btn-info text-white" onclick="showMoveModal(${file.id})">移动</button>
-                    <button class="btn btn-sm btn-danger" onclick="deleteFile(${file.id}, ${file.is_folder})">删除</button>
-                    ${file.is_folder ? '' : `
-                        ${showPreviewBtn ? `<button class="btn btn-sm btn-success" onclick="previewFile('${file.id}')"><i class="bi bi-eye"></i> 预览</button>` : ''}
-                        <button class="btn btn-sm btn-primary" onclick="openTelegramFile('${file.id}')"><i class="bi bi-download"></i> 下载</button>
-                    `}
-                </div>
-            </td>
-        `;
-        
-        // 添加文件夹点击事件
-        const folderLink = tr.querySelector('.folder-link');
-        if (folderLink) {
-            folderLink.addEventListener('click', (e) => {
-                e.preventDefault();
-                currentFolderId = folderLink.dataset.id;
-                currentPage = 1; // 重置为第一页
+        if (file.is_folder) {
+            const openBtn = document.createElement('button');
+            openBtn.className = 'btn btn-sm btn-outline-primary';
+            openBtn.innerHTML = '<i class="bi bi-folder2-open"></i>';
+            openBtn.title = '打开文件夹';
+            openBtn.onclick = () => {
+                FileManager.currentFolderId = file.id;
+                FileManager.currentPage = 1;
                 loadFiles();
-            });
+            };
+            btnGroup.appendChild(openBtn);
+        } else {
+            const previewBtn = document.createElement('button');
+            previewBtn.className = 'btn btn-sm btn-outline-primary';
+            previewBtn.innerHTML = '<i class="bi bi-eye"></i>';
+            previewBtn.title = '预览';
+            previewBtn.onclick = () => previewFile(file.id);
+            btnGroup.appendChild(previewBtn);
         }
-        
-        tbody.appendChild(tr);
-    });
-    
-    // 等待所有文件夹大小计算完成并更新UI
-    if (folderSizePromises.length > 0) {
-        Promise.all(folderSizePromises.map(item => item.promise))
-            .then(sizes => {
-                folderSizePromises.forEach((item, index) => {
-                    const sizeCell = document.querySelector(`.file-size[data-id="${item.id}"]`);
-                    if (sizeCell) {
-                        sizeCell.textContent = formatSize(sizes[index].size);
-                    }
-                });
-            })
-            .catch(error => {
-                console.error('Error updating folder sizes:', error);
-            });
+
+        const moveBtn = document.createElement('button');
+        moveBtn.className = 'btn btn-sm btn-outline-info';
+        moveBtn.innerHTML = '<i class="bi bi-folder-symlink"></i>';
+        moveBtn.title = '移动';
+        moveBtn.onclick = () => showMoveModal(file.id);
+        btnGroup.appendChild(moveBtn);
+
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'btn btn-sm btn-outline-secondary';
+        renameBtn.innerHTML = '<i class="bi bi-pencil"></i>';
+        renameBtn.title = '重命名';
+        renameBtn.onclick = () => showRenameModal(file.id, file.name);
+        btnGroup.appendChild(renameBtn);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-sm btn-outline-danger';
+        deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+        deleteBtn.title = '删除';
+        deleteBtn.onclick = () => deleteFile(file.id, file.is_folder);
+        btnGroup.appendChild(deleteBtn);
+
+        actionsCell.appendChild(btnGroup);
+        row.appendChild(actionsCell);
+
+        fileList.appendChild(row);
     }
-    
-    console.log('File list rendering completed');
-    // 初始化新的 tooltips
-    initPopovers();
-    
-    // 更新排序图标
-    updateSortIcon();
 }
 
 // 更新面包屑
@@ -2083,15 +2023,20 @@ async function previewFile(fileId) {
 
 // 在文件上传成功后更新文件夹大小缓存
 async function updateFolderSizeCache(folderId) {
-    if (folderId) {
-        // 清除该文件夹及其所有父文件夹的缓存
-        const folderPath = await getFolderPath(folderId);
-        for (const folder of folderPath) {
-            delete FileManager.folderSizeCache[folder.id];
-        }
-        // 重新计算当前文件夹大小
-        await calculateFolderSize(folderId);
+    // 清除当前文件夹的缓存
+    delete FileManager.folderSizeCache[folderId];
+    
+    // 清除所有父文件夹的缓存
+    let currentId = folderId;
+    while (currentId) {
+        const parent = FileManager.allFiles.find(f => f.id === currentId);
+        if (!parent || !parent.parent_id) break;
+        currentId = parent.parent_id;
+        delete FileManager.folderSizeCache[currentId];
     }
+    
+    // 重新计算当前文件夹大小
+    await calculateFolderSize(folderId);
 }
 
 // 修改文件上传成功后的处理
