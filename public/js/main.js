@@ -378,6 +378,11 @@ async function renderFileList() {
     const fileList = document.getElementById('fileList');
     if (!fileList) return;
 
+    // 确保FileManager.filteredFiles存在
+    if (!FileManager.filteredFiles) {
+        FileManager.filteredFiles = FileManager.allFiles || [];
+    }
+
     const start = (FileManager.currentPage - 1) * FileManager.pageSize;
     const end = start + FileManager.pageSize;
     const filesToShow = FileManager.filteredFiles.slice(start, end);
