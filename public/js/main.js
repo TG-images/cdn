@@ -445,61 +445,76 @@ function updateSortIcon() {
 
 // 渲染文件列表
 function renderFileList() {
-    const fileList = document.querySelector('#fileList tbody');
+    const fileList = document.querySelector('#fileList');
     if (!fileList) {
         console.error('找不到文件列表元素');
         return;
     }
     
+    // 清空现有内容
     fileList.innerHTML = '';
     
+    // 如果没有文件显示提示信息
     if (!FileManager.filteredFiles || FileManager.filteredFiles.length === 0) {
         const emptyRow = document.createElement('tr');
-        emptyRow.innerHTML = '<td colspan="6" class="text-center">当前文件夹为空</td>';
-        fileList.appendChild(emptyRow);
-        return;
-    }
-    
-    const startIndex = (FileManager.currentPage - 1) * FileManager.pageSize;
-    const endIndex = Math.min(startIndex + FileManager.pageSize, FileManager.filteredFiles.length);
-    
-    for (let i = startIndex; i < endIndex; i++) {
-        const file = FileManager.filteredFiles[i];
-        const row = document.createElement('tr');
-        
-        // 复选框列
-        row.innerHTML = `
-            <td class="col-checkbox">
-                <input type="checkbox" class="file-checkbox" data-id="${file.id}" data-is-folder="${file.is_folder}">
-            </td>
-            <td class="col-number">${i + 1}</td>
-            <td class="col-name" title="${file.name}">${file.name}</td>
-            <td class="col-size">${formatSize(file.size)}</td>
-            <td class="col-date">${moment(file.created_at).format('YYYY-MM-DD HH:mm:ss')}</td>
-            <td class="col-actions">
-                <div class="btn-group">
-                    <button class="btn btn-sm btn-outline-primary" onclick="showRenameModal(${file.id}, '${file.name}')" title="重命名">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-info" onclick="showMoveModal(${file.id})" title="移动">
-                        <i class="bi bi-folder-symlink"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="deleteFile(${file.id}, ${file.is_folder})" title="删除">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                    ${!file.is_folder ? `
-                        <button class="btn btn-sm btn-outline-success" onclick="openTelegramFile('${file.file_id}')" title="下载">
-                            <i class="bi bi-download"></i>
-                        </button>
-                    ` : ''}
+        emptyRow.innerHTML = `
+            <td colspan="6" class="text-center">
+                <div class="p-3">
+                    <i class="bi bi-folder2-open me-2"></i>
+                    当前文件夹为空
                 </div>
             </td>
         `;
-        
-        fileList.appendChild(row);
+        fileList.appendChild(emptyRow);
+        updateFileStats();
+        return;
     }
     
+    // 计算当前页的文件范围
+    const startIndex = (FileManager.currentPage - 1) * FileManager.pageSize;
+    const endIndex = Math.min(startIndex + FileManager.pageSize, FileManager.filteredFiles.length);
+    const currentPageFiles = FileManager.filteredFiles.slice(startIndex, endIndex);
+    
+    // 渲染文件列表
+    currentPageFiles.forEach((file, index) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><input type="checkbox" class="file-checkbox" data-id="${file.id}"></td>
+            <td>${startIndex + index + 1}</td>
+            <td>
+                ${file.is_folder ? 
+                    `<i class="bi bi-folder me-2"></i>
+                     <a href="#" onclick="loadFiles('${file.id}'); return false;">${file.filename}</a>` : 
+                    `<i class="bi bi-file-earmark me-2"></i>${file.filename}`}
+            </td>
+            <td>${formatSize(file.size || 0)}</td>
+            <td>${moment(file.created_at).format('YYYY-MM-DD HH:mm:ss')}</td>
+            <td>
+                <div class="btn-group">
+                    ${!file.is_folder ? 
+                        `<button class="btn btn-sm btn-outline-primary" onclick="openTelegramFile('${file.file_id}')" title="下载">
+                            <i class="bi bi-download"></i>
+                        </button>` : ''}
+                    <button class="btn btn-sm btn-outline-secondary" onclick="showRenameModal('${file.id}', '${file.filename}')" title="重命名">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-info" onclick="showMoveModal('${file.id}')" title="移动">
+                        <i class="bi bi-folder-symlink"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteFile('${file.id}', ${file.is_folder})" title="删除">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </td>
+        `;
+        fileList.appendChild(tr);
+    });
+    
+    // 更新文件统计信息
     updateFileStats();
+    
+    // 更新分页信息
+    updatePagination(FileManager.filteredFiles.length);
 }
 
 // 更新面包屑
