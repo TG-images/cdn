@@ -1,32 +1,31 @@
-window.FileManager = {
+window.FileManager = window.FileManager || {
+    allFiles: [],
+    filteredFiles: [],
+    folderSizeCache: {},
+    calculatingSizes: new Set(),
+    currentPage: 1,
+    pageSize: 10,
+    sortField: 'name',
+    sortOrder: 'asc',
+    selectedFiles: new Set(),
     currentFolderId: null,
+    currentPath: '',
+    modals: {},
+    uploadSuccess: false,
+    // 性能优化参数
+    sizeCalculationBatch: 3, // 每批计算的文件夹数量
+    sizeCalculationDelay: 200, // 批次间延迟(毫秒)
+    pendingSizeCalculations: [],
+    // 保留原有属性
     selectedFileId: null,
     pendingDeleteId: null,
     pendingDeleteIsFolder: false,
     pendingBatchDeleteFiles: null,
     selectedItemId: null,
-    // 分页相关变量
-    currentPage: 1,
     totalPages: 1,
-    pageSize: 10,
-    allFiles: [], // 存储当前文件夹中的所有文件
-    // 排序相关变量
     currentSortField: 'name',
     currentSortOrder: 'asc',
-    // 文件夹大小缓存
-    folderSizeCache: {},
-    // Modal 变量
-    newFolderModal: null,
-    moveModal: null,
-    batchMoveModal: null,
-    confirmDeleteModal: null,
-    renameModal: null,
-    previewModal: null,
-    changePasswordModal: null,
-    // 添加进行中标记，避免重复请求
-    pendingFolderSizeRequests: {},
-    calculatingSizes: new Set(),
-    currentPath: ''
+    pendingFolderSizeRequests: {}
 };
 
 // 初始化 Modal
@@ -63,17 +62,17 @@ function initializeModalsAfterLoad() {
         const changePasswordModalEl = document.getElementById('changePasswordModal');
 
         // 检查元素是否存在并初始化
-        if (newFolderModalEl && !FileManager.newFolderModal) {
-            FileManager.newFolderModal = new bootstrap.Modal(newFolderModalEl);
+        if (newFolderModalEl && !FileManager.modals.newFolderModal) {
+            FileManager.modals.newFolderModal = new bootstrap.Modal(newFolderModalEl);
         }
-        if (moveModalEl && !FileManager.moveModal) {
-            FileManager.moveModal = new bootstrap.Modal(moveModalEl);
+        if (moveModalEl && !FileManager.modals.moveModal) {
+            FileManager.modals.moveModal = new bootstrap.Modal(moveModalEl);
         }
-        if (batchMoveModalEl && !FileManager.batchMoveModal) {
-            FileManager.batchMoveModal = new bootstrap.Modal(batchMoveModalEl);
+        if (batchMoveModalEl && !FileManager.modals.batchMoveModal) {
+            FileManager.modals.batchMoveModal = new bootstrap.Modal(batchMoveModalEl);
         }
-        if (confirmDeleteModalEl && !FileManager.confirmDeleteModal) {
-            FileManager.confirmDeleteModal = new bootstrap.Modal(confirmDeleteModalEl);
+        if (confirmDeleteModalEl && !FileManager.modals.confirmDeleteModal) {
+            FileManager.modals.confirmDeleteModal = new bootstrap.Modal(confirmDeleteModalEl);
             
             // 添加取消事件监听器
             confirmDeleteModalEl.addEventListener('hidden.bs.modal', function () {
@@ -90,14 +89,14 @@ function initializeModalsAfterLoad() {
                 console.log('确认删除按钮已启用');
             }
         }
-        if (renameModalEl && !FileManager.renameModal) {
-            FileManager.renameModal = new bootstrap.Modal(renameModalEl);
+        if (renameModalEl && !FileManager.modals.renameModal) {
+            FileManager.modals.renameModal = new bootstrap.Modal(renameModalEl);
         }
-        if (previewModalEl && !FileManager.previewModal) {
-            FileManager.previewModal = new bootstrap.Modal(previewModalEl);
+        if (previewModalEl && !FileManager.modals.previewModal) {
+            FileManager.modals.previewModal = new bootstrap.Modal(previewModalEl);
         }
-        if (changePasswordModalEl && !FileManager.changePasswordModal) {
-            FileManager.changePasswordModal = new bootstrap.Modal(changePasswordModalEl);
+        if (changePasswordModalEl && !FileManager.modals.changePasswordModal) {
+            FileManager.modals.changePasswordModal = new bootstrap.Modal(changePasswordModalEl);
         }
     } catch (error) {
         console.error('Modal 初始化错误:', error);
@@ -256,21 +255,29 @@ function calculateFolderSizeLocally(folderId) {
                 
                 // 获取当前文件夹的直接子文件和子文件夹
                 const children = FileManager.allFiles.filter(file => file.parent_id === folder_id);
+                let folderSize = 0;
                 
                 for (const child of children) {
                     if (child.is_folder) {
                         // 如果子文件夹已有缓存，直接使用
                         if (FileManager.folderSizeCache[child.id] !== undefined) {
-                            totalSize += FileManager.folderSizeCache[child.id];
+                            folderSize += FileManager.folderSizeCache[child.id];
                         } else {
                             // 递归计算子文件夹大小
                             dfs(child.id);
+                            // 递归完成后，从缓存中获取计算后的大小
+                            folderSize += FileManager.folderSizeCache[child.id] || 0;
                         }
                     } else {
                         // 累加文件大小
-                        totalSize += parseInt(child.file_size || child.size || 0, 10);
+                        folderSize += parseInt(child.file_size || child.size || 0, 10);
                     }
                 }
+                
+                // 更新当前文件夹的缓存
+                FileManager.folderSizeCache[folder_id] = folderSize;
+                // 累加到总大小
+                totalSize += folderSize;
             }
             
             dfs(folderId);
@@ -443,83 +450,49 @@ function sortFiles(files, sortBy, sortDirection) {
 
 // 处理排序点击事件
 function handleSort(field) {
-    console.log('处理排序:', { field, currentField: FileManager.sortField, currentOrder: FileManager.sortOrder });
+    let sortDirection;
     
-    if (FileManager.sortField === field) {
-        // 如果点击的是当前排序字段，切换排序顺序
-        FileManager.sortOrder = FileManager.sortOrder === 'asc' ? 'desc' : 'asc';
+    // 如果当前已经按此字段排序，则切换排序方向
+    if (field === FileManager.currentSortField) {
+        sortDirection = FileManager.currentSortOrder === 'asc' ? 'desc' : 'asc';
     } else {
-        // 如果点击的是新字段，设置为升序
-        FileManager.sortField = field;
-        FileManager.sortOrder = 'asc';
+        // 如果是新的排序字段，默认使用升序
+        sortDirection = 'asc';
     }
     
-    // 如果按大小排序，确保所有文件夹的大小都已计算
-    if (field === 'size') {
-        // 预计算所有显示的文件夹大小
-        const folderIds = FileManager.filteredFiles
-            .filter(file => file.is_folder)
-            .map(folder => folder.id);
-            
-        if (folderIds.length > 0) {
-            // 显示加载提示
-            showToast('正在计算文件夹大小，请稍候...', 'info');
-            
-            // 异步计算所有文件夹大小
-            Promise.all(folderIds.map(id => calculateFolderSize(id)))
-                .then(() => {
-                    // 完成后重新排序和渲染
-                    FileManager.filteredFiles = sortFiles(FileManager.filteredFiles, FileManager.sortField, FileManager.sortOrder);
-                    renderFileList();
-                    showToast('排序完成', 'success');
-                })
-                .catch(error => {
-                    console.error('计算文件夹大小失败:', error);
-                    showToast('部分文件夹大小计算失败', 'warning');
-                    // 即使有错误也尝试排序和渲染
-                    FileManager.filteredFiles = sortFiles(FileManager.filteredFiles, FileManager.sortField, FileManager.sortOrder);
-                    renderFileList();
-                });
-        } else {
-            // 没有文件夹，直接排序
-            FileManager.filteredFiles = sortFiles(FileManager.filteredFiles, FileManager.sortField, FileManager.sortOrder);
-            renderFileList();
-        }
-    } else {
-        // 其他字段直接排序
-        FileManager.filteredFiles = sortFiles(FileManager.filteredFiles, FileManager.sortField, FileManager.sortOrder);
-        renderFileList();
-    }
+    // 更新排序状态
+    FileManager.currentSortField = field;
+    FileManager.currentSortOrder = sortDirection;
+    
+    // 排序并重新渲染
+    FileManager.filteredFiles = sortFiles(FileManager.filteredFiles, field, sortDirection);
+    renderFileList();
     
     // 更新排序图标
     updateSortIcon();
-    
-    console.log('排序完成:', { 
-        field: FileManager.sortField, 
-        order: FileManager.sortOrder,
-        filesCount: FileManager.filteredFiles?.length 
-    });
 }
 
 // 更新排序图标
 function updateSortIcon() {
-    // 移除所有列的排序图标
-    document.querySelectorAll('th[data-sort] .sort-icon').forEach(icon => {
-        icon.parentElement.removeChild(icon);
-    });
-    
-    // 添加当前排序列的图标
-    const th = document.querySelector(`th[data-sort="${FileManager.sortField}"]`);
-    if (th) {
-        const icon = document.createElement('span');
-        icon.className = 'sort-icon ms-1';
-        icon.innerHTML = FileManager.sortOrder === 'asc' ? '↑' : '↓';
-        th.appendChild(icon);
-        
-        // 更新所有排序列的状态
-        document.querySelectorAll('th[data-sort]').forEach(header => {
-            header.classList.toggle('active', header === th);
+    try {
+        // 移除所有排序图标
+        document.querySelectorAll('th.sortable .sort-icon').forEach(icon => {
+            icon.remove();
         });
+        
+        // 找到当前排序的列
+        const sortedHeader = document.querySelector(`th.sortable[data-sort="${FileManager.currentSortField}"]`);
+        if (!sortedHeader) return;
+        
+        // 创建排序图标
+        const sortIcon = document.createElement('span');
+        sortIcon.className = 'sort-icon ms-1';
+        sortIcon.innerHTML = FileManager.currentSortOrder === 'asc' ? '↑' : '↓';
+        
+        // 添加到表头
+        sortedHeader.appendChild(sortIcon);
+    } catch (error) {
+        console.error('更新排序图标出错:', error);
     }
 }
 
@@ -543,6 +516,9 @@ function renderFileList() {
     const startIndex = (currentPage - 1) * pageSize;
     const endIndex = Math.min(startIndex + pageSize, FileManager.filteredFiles.length);
     const pageFiles = FileManager.filteredFiles.slice(startIndex, endIndex);
+    
+    // 清空待计算队列
+    FileManager.pendingSizeCalculations = [];
     
     // 渲染文件列表
     pageFiles.forEach((file, index) => {
@@ -631,17 +607,10 @@ function renderFileList() {
             sizeCell.textContent = '计算中...';
             sizeCell.dataset.folderId = file.id;
             
-            // 异步计算文件夹大小
-            calculateFolderSizeLocally(file.id).then(size => {
-                // 更新大小显示
-                if (size === 0) {
-                    sizeCell.textContent = '0 B';
-                } else {
-                    sizeCell.textContent = formatSize(size);
-                }
-            }).catch(error => {
-                console.error('计算文件夹大小出错:', error);
-                sizeCell.textContent = '-';
+            // 将需要计算大小的文件夹添加到待处理队列
+            FileManager.pendingSizeCalculations.push({
+                id: file.id,
+                cell: sizeCell
             });
         } else {
             // 使用file_size或size字段
@@ -716,6 +685,41 @@ function renderFileList() {
     
     // 更新分页
     updatePagination(FileManager.filteredFiles.length);
+    
+    // 批量处理文件夹大小计算
+    processFolderSizeCalculations();
+}
+
+// 批量处理文件夹大小计算，避免同时计算过多文件夹导致性能问题
+function processFolderSizeCalculations() {
+    if (FileManager.pendingSizeCalculations.length === 0) return;
+    
+    // 取出一批待处理的文件夹
+    const batch = FileManager.pendingSizeCalculations.splice(0, FileManager.sizeCalculationBatch);
+    
+    // 处理这一批文件夹
+    batch.forEach(item => {
+        calculateFolderSizeLocally(item.id).then(size => {
+            // 更新大小显示
+            if (item.cell && document.contains(item.cell)) {
+                if (size === 0) {
+                    item.cell.textContent = '0 B';
+                } else {
+                    item.cell.textContent = formatSize(size);
+                }
+            }
+        }).catch(error => {
+            console.error('计算文件夹大小出错:', error);
+            if (item.cell && document.contains(item.cell)) {
+                item.cell.textContent = '-';
+            }
+        });
+    });
+    
+    // 如果还有待处理的文件夹，延迟处理下一批
+    if (FileManager.pendingSizeCalculations.length > 0) {
+        setTimeout(processFolderSizeCalculations, FileManager.sizeCalculationDelay);
+    }
 }
 
 // 更新面包屑
@@ -776,10 +780,10 @@ function updateBreadcrumb(folderPath) {
 // 显示新建文件夹模态框
 function showNewFolderModal() {
     try {
-        if (!FileManager.newFolderModal) {
+        if (!FileManager.modals.newFolderModal) {
             const modalElement = document.getElementById('newFolderModal');
             if (modalElement) {
-                FileManager.newFolderModal = new bootstrap.Modal(modalElement);
+                FileManager.modals.newFolderModal = new bootstrap.Modal(modalElement);
             } else {
                 throw new Error('找不到新建文件夹模态框元素');
             }
@@ -792,14 +796,14 @@ function showNewFolderModal() {
         }
         
         // 在模态框显示后聚焦到输入框
-        FileManager.newFolderModal._element.addEventListener('shown.bs.modal', () => {
+        FileManager.modals.newFolderModal._element.addEventListener('shown.bs.modal', () => {
             if (folderNameInput) {
                 folderNameInput.focus();
             }
         }, { once: true });
         
     // 显示模态框
-    FileManager.newFolderModal.show();
+    FileManager.modals.newFolderModal.show();
     } catch (error) {
         console.error('显示新建文件夹模态框失败:', error);
         showToast('无法显示新建文件夹窗口: ' + error.message, 'error');
@@ -830,8 +834,8 @@ async function createFolder() {
             showToast('文件夹创建成功');
             
             // 安全地关闭模态框
-            if (FileManager.newFolderModal) {
-                FileManager.newFolderModal.hide();
+            if (FileManager.modals.newFolderModal) {
+                FileManager.modals.newFolderModal.hide();
         } else {
                 const modalElement = document.getElementById('newFolderModal');
                 if (modalElement) {
@@ -1277,7 +1281,7 @@ async function showMoveModal(fileId) {
     // 修复辅助功能，在模态框关闭时将焦点移回触发按钮
     const triggerButton = document.activeElement;
     
-    FileManager.moveModal._element.addEventListener('hidden.bs.modal', function () {
+    FileManager.modals.moveModal._element.addEventListener('hidden.bs.modal', function () {
         if (triggerButton && typeof triggerButton.focus === 'function') {
             setTimeout(() => triggerButton.focus(), 0);
         }
@@ -1287,7 +1291,7 @@ async function showMoveModal(fileId) {
         }
     }, { once: true });
     
-    FileManager.moveModal.show();
+    FileManager.modals.moveModal.show();
 }
 
 // 显示批量移动模态框
@@ -1337,7 +1341,7 @@ async function showBatchMoveModal() {
     // 修复辅助功能，在模态框关闭时将焦点移回触发按钮
     const triggerButton = document.activeElement;
     
-    FileManager.batchMoveModal._element.addEventListener('hidden.bs.modal', function () {  // 使用FileManager.batchMoveModal
+    FileManager.modals.batchMoveModal._element.addEventListener('hidden.bs.modal', function () {  // 使用FileManager.modals.batchMoveModal
         if (triggerButton && typeof triggerButton.focus === 'function') {
             setTimeout(() => triggerButton.focus(), 0);
         }
@@ -1347,7 +1351,7 @@ async function showBatchMoveModal() {
         }
     }, { once: true });
     
-    FileManager.batchMoveModal.show();  // 使用FileManager.batchMoveModal
+    FileManager.modals.batchMoveModal.show();  // 使用FileManager.modals.batchMoveModal
 }
 
 // 移动文件
@@ -1393,7 +1397,7 @@ async function moveFile() {
 
         if (response.ok) {
             showToast('移动成功');
-            FileManager.moveModal.hide();  // 使用FileManager.moveModal
+            FileManager.modals.moveModal.hide();  // 使用FileManager.modals.moveModal
             // 如果当前页将没有内容了，且不是第一页，则回到上一页
             if (FileManager.allFiles.length <= FileManager.pageSize && FileManager.currentPage > 1) {
                 FileManager.currentPage--;
@@ -1451,7 +1455,7 @@ async function deleteFile(id, isFolder) {
                     `;
                     
                     // 添加到模态框
-                    const modalBody = FileManager.confirmDeleteModal._element.querySelector('.modal-body');
+                    const modalBody = FileManager.modals.confirmDeleteModal._element.querySelector('.modal-body');
                     modalBody.appendChild(progressContainer);
                     
                     // 禁用确认按钮
@@ -1473,7 +1477,7 @@ async function deleteFile(id, isFolder) {
                 showToast('删除成功');
                     
                     // 关闭模态框并刷新文件列表
-                    FileManager.confirmDeleteModal.hide();
+                    FileManager.modals.confirmDeleteModal.hide();
                 loadFiles();
     } catch (error) {
                     console.error('删除失败:', error);
@@ -1483,8 +1487,8 @@ async function deleteFile(id, isFolder) {
                     FileManager.pendingDeleteId = null;
                     FileManager.pendingDeleteIsFolder = false;
                     // 如果模态框仍然显示，则关闭它
-                    if (FileManager.confirmDeleteModal && FileManager.confirmDeleteModal._element.classList.contains('show')) {
-                FileManager.confirmDeleteModal.hide();
+                    if (FileManager.modals.confirmDeleteModal && FileManager.modals.confirmDeleteModal._element.classList.contains('show')) {
+                FileManager.modals.confirmDeleteModal.hide();
                     }
                 }
             };
@@ -1492,15 +1496,15 @@ async function deleteFile(id, isFolder) {
         }
         
         // 显示确认对话框
-        if (FileManager.confirmDeleteModal) {
+        if (FileManager.modals.confirmDeleteModal) {
             // 确保在显示模态框前清除之前的进度条
-            const modalBody = FileManager.confirmDeleteModal._element.querySelector('.modal-body');
+            const modalBody = FileManager.modals.confirmDeleteModal._element.querySelector('.modal-body');
             const existingProgressContainer = modalBody.querySelector('.progress-container');
             if (existingProgressContainer) {
                 modalBody.removeChild(existingProgressContainer);
             }
             
-            FileManager.confirmDeleteModal.show();
+            FileManager.modals.confirmDeleteModal.show();
         } else {
             console.error('确认删除模态框未初始化');
             showToast('系统错误：确认删除模态框未初始化', 'error');
@@ -1612,7 +1616,7 @@ async function deleteSelected() {
                 `;
                 
                 // 添加到模态框
-                const modalBody = FileManager.confirmDeleteModal._element.querySelector('.modal-body');
+                const modalBody = FileManager.modals.confirmDeleteModal._element.querySelector('.modal-body');
                 modalBody.appendChild(progressContainer);
                 
                 // 禁用确认按钮
@@ -1653,7 +1657,7 @@ async function deleteSelected() {
                 }
                 
                 // 关闭模态框并刷新文件列表
-                FileManager.confirmDeleteModal.hide();
+                FileManager.modals.confirmDeleteModal.hide();
                 loadFiles();
             } catch (error) {
                 console.error('批量删除失败:', error);
@@ -1662,8 +1666,8 @@ async function deleteSelected() {
                 // 确保在任何情况下都重置状态
                 FileManager.pendingBatchDeleteFiles = null;
                 // 如果模态框仍然显示，则关闭它
-                if (FileManager.confirmDeleteModal && FileManager.confirmDeleteModal._element.classList.contains('show')) {
-                    FileManager.confirmDeleteModal.hide();
+                if (FileManager.modals.confirmDeleteModal && FileManager.modals.confirmDeleteModal._element.classList.contains('show')) {
+                    FileManager.modals.confirmDeleteModal.hide();
                 }
             }
         };
@@ -1671,15 +1675,15 @@ async function deleteSelected() {
     }
     
     // 显示确认对话框
-    if (FileManager.confirmDeleteModal) {
+    if (FileManager.modals.confirmDeleteModal) {
         // 确保在显示模态框前清除之前的进度条
-        const modalBody = FileManager.confirmDeleteModal._element.querySelector('.modal-body');
+        const modalBody = FileManager.modals.confirmDeleteModal._element.querySelector('.modal-body');
         const existingProgressContainer = modalBody.querySelector('.progress-container');
         if (existingProgressContainer) {
             modalBody.removeChild(existingProgressContainer);
         }
         
-    FileManager.confirmDeleteModal.show();
+    FileManager.modals.confirmDeleteModal.show();
     } else {
         console.error('确认删除模态框未初始化');
         showToast('系统错误：确认删除模态框未初始化', 'error');
@@ -1823,12 +1827,12 @@ function showRenameModal(id, currentName) {
     nameInput.value = currentName;
     
     // 在模态框显示后聚焦到输入框并选中文本
-    FileManager.renameModal._element.addEventListener('shown.bs.modal', () => {
+    FileManager.modals.renameModal._element.addEventListener('shown.bs.modal', () => {
         nameInput.focus();
         nameInput.select();
     }, { once: true });
     
-    FileManager.renameModal.show();
+    FileManager.modals.renameModal.show();
 }
 
 // 执行重命名
@@ -1848,7 +1852,7 @@ async function renameItem() {
         
         if (response.ok) {
             showToast('重命名成功');
-            FileManager.renameModal.hide();
+            FileManager.modals.renameModal.hide();
             loadFiles();
         } else {
             const data = await response.json();
