@@ -158,12 +158,22 @@
         }
         /* 文件名样式 */
         .file-name-cell {
-            display: block;
+            display: inline-block;
             max-width: 100%;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
             position: relative;
+        }
+        
+        /* 确保文件名容器样式正确 */
+        .col-name .d-flex {
+            width: 100%;
+            overflow: hidden;
+        }
+        
+        .col-name .d-flex i {
+            flex-shrink: 0;
         }
         .file-name-cell:hover::after {
             content: attr(data-full-name);
@@ -444,7 +454,7 @@
                                 <th class="col-name sortable" data-sort="name" onclick="handleSort('name')">名称</th>
                                 <th class="col-size sortable" data-sort="size" onclick="handleSort('size')">大小</th>
                                 <th class="col-date sortable" data-sort="created_at" onclick="handleSort('created_at')">创建时间</th>
-                                <th class="col-actions" style="padding-left: 0px;">操作</th>
+                                <th class="col-actions" style="padding-left: 10px;">操作</th>
                             </tr>
                         </thead>
                         <tbody id="fileList"></tbody>
