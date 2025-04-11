@@ -245,10 +245,10 @@ async function loadFiles(path = '') {
     try {
         // 显示加载状态
         const fileList = document.getElementById('fileList');
-        fileList.innerHTML = '<tr><td colspan="4" class="text-center">加载中...</td></tr>';
+        fileList.innerHTML = '<tr><td colspan="6" class="text-center">加载中...</td></tr>';
         
         // 获取文件列表
-        const response = await fetch(`/api/files?path=${encodeURIComponent(path)}`);
+        const response = await fetch(`/api/files?parent_id=${FileManager.currentFolderId || ''}`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -289,9 +289,7 @@ async function loadFiles(path = '') {
     } catch (error) {
         console.error('加载文件列表失败:', error);
         const fileList = document.getElementById('fileList');
-        fileList.innerHTML = `<tr><td colspan="4" class="text-center text-danger">
-            <i class="fas fa-exclamation-circle"></i> 加载失败: ${error.message}
-        </td></tr>`;
+        fileList.innerHTML = `<tr><td colspan="6" class="text-center text-danger">加载文件列表失败: ${error.message}</td></tr>`;
     }
 }
 
