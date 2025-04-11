@@ -967,7 +967,8 @@ export async function onRequest(context) {
         const fileId = path.match(/^files\/(\d+)$/)[1];
         
         console.log('删除文件:', {
-          fileId: fileId
+          fileId: fileId,
+          hasDB: !!env.DB
         });
         
         // 获取D1数据库
@@ -979,12 +980,13 @@ export async function onRequest(context) {
         
         // 检查文件是否存在
         const file = await db.prepare(
-          `SELECT id, is_folder FROM files WHERE id = ?`
+          `SELECT id, is_folder, filename FROM files WHERE id = ?`
         ).bind(fileId).first();
         
         if (!file) {
           return new Response(JSON.stringify({
-            error: '文件不存在'
+            error: '文件不存在',
+            fileId: fileId
           }), {
             status: 404,
             headers: {
@@ -994,20 +996,39 @@ export async function onRequest(context) {
           });
         }
         
+        console.log('找到要删除的文件:', {
+          id: file.id,
+          is_folder: file.is_folder,
+          filename: file.filename
+        });
+        
         // 如果是文件夹，递归删除其中的所有文件和子文件夹
         if (file.is_folder) {
-          // 递归删除子文件和子文件夹
-          await deleteFolder(db, fileId);
+          try {
+            // 递归删除子文件和子文件夹
+            await deleteFolder(db, fileId);
+            console.log('文件夹及其内容删除成功:', fileId);
+          } catch (folderError) {
+            console.error('删除文件夹内容时出错:', folderError);
+            throw new Error(`删除文件夹内容失败: ${folderError.message}`);
+          }
         }
         
         // 删除文件本身
-        await db.prepare(
-          `DELETE FROM files WHERE id = ?`
-        ).bind(fileId).run();
+        try {
+          await db.prepare(
+            `DELETE FROM files WHERE id = ?`
+          ).bind(fileId).run();
+          console.log('文件记录删除成功:', fileId);
+        } catch (deleteError) {
+          console.error('删除文件记录时出错:', deleteError);
+          throw new Error(`删除文件记录失败: ${deleteError.message}`);
+        }
         
         return new Response(JSON.stringify({
           success: true,
-          message: '文件删除成功'
+          message: '文件删除成功',
+          fileId: fileId
         }), {
           headers: {
             'Content-Type': 'application/json',
@@ -1015,11 +1036,16 @@ export async function onRequest(context) {
           }
         });
       } catch (error) {
-        console.error('删除文件错误:', error);
+        console.error('删除文件错误:', {
+          message: error.message,
+          stack: error.stack,
+          fileId: path.match(/^files\/(\d+)$/)?.[1]
+        });
         return new Response(JSON.stringify({
           error: '删除文件失败',
           message: error.message,
-          stack: error.stack
+          details: error.stack,
+          fileId: path.match(/^files\/(\d+)$/)?.[1]
         }), {
           status: 500,
           headers: {
