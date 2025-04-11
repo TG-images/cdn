@@ -1811,7 +1811,7 @@ async function renameItem() {
     }
     
     try {
-        const response = await fetch(`/api/files/${selectedItemId}/rename`, {
+        const response = await fetch(`/api/files/${FileManager.selectedItemId}/rename`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ newName })
@@ -1819,7 +1819,7 @@ async function renameItem() {
         
         if (response.ok) {
             showToast('重命名成功');
-            renameModal.hide();
+            FileManager.renameModal.hide();
             loadFiles();
         } else {
             const data = await response.json();
