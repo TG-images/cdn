@@ -1225,38 +1225,39 @@ async function performDelete() {
             });
             
             console.log('删除响应状态:', response.status);
-            const responseText = await response.text();
-            console.log('删除响应内容:', responseText);
             
-            let responseData;
-            try {
-                responseData = JSON.parse(responseText);
-            } catch (e) {
-                responseData = { message: responseText };
-            }
-
-        if (response.ok) {
+            if (response.ok) {
                 showToast('删除成功');
                 // 如果当前页没有内容了，且不是第一页，则回到上一页
                 if (FileManager.allFiles.length <= FileManager.pageSize && FileManager.currentPage > 1) {
                     FileManager.currentPage--;
                 }
                 loadFiles();
-        } else {
-                showToast(`删除失败: ${responseData.error || responseData.message || '未知错误'}`, 'error');
-        }
-    } catch (error) {
+            } else {
+                const responseText = await response.text();
+                console.log('删除响应内容:', responseText);
+                
+                let errorMessage;
+                try {
+                    const responseData = JSON.parse(responseText);
+                    errorMessage = responseData.error || responseData.message || '未知错误';
+                } catch (e) {
+                    errorMessage = responseText || '服务器返回了非JSON格式的数据';
+                }
+                showToast(`删除失败: ${errorMessage}`, 'error');
+            }
+        } catch (error) {
             console.error('Delete error:', error);
             showToast(`删除失败: ${error.message}`, 'error');
         } finally {
             // 关闭确认对话框
             if (FileManager.confirmDeleteModal) {
                 FileManager.confirmDeleteModal.hide();
-        }
-        
-        // 重置待删除项
-        FileManager.pendingDeleteId = null;
-        FileManager.pendingDeleteIsFolder = false;
+            }
+            
+            // 重置待删除项
+            FileManager.pendingDeleteId = null;
+            FileManager.pendingDeleteIsFolder = false;
         }
     }
     // 批量删除
