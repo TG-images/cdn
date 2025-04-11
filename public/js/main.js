@@ -537,12 +537,26 @@ function renderFileList() {
                 loadFiles(file.id);
             };
             nameCell.appendChild(nameLink);
+            
+            // 检查文件名是否被截断
+            setTimeout(() => {
+                if (nameLink.scrollWidth > nameLink.clientWidth) {
+                    nameLink.classList.add('truncated');
+                }
+            }, 0);
         } else {
             const nameSpan = document.createElement('span');
             nameSpan.textContent = file.name || file.filename;
             nameSpan.className = 'file-name-cell';
             nameSpan.setAttribute('data-full-name', file.name || file.filename);
             nameCell.appendChild(nameSpan);
+            
+            // 检查文件名是否被截断
+            setTimeout(() => {
+                if (nameSpan.scrollWidth > nameSpan.clientWidth) {
+                    nameSpan.classList.add('truncated');
+                }
+            }, 0);
         }
         
         row.appendChild(nameCell);
