@@ -1,19 +1,28 @@
 // 等待FileManager对象初始化完成
 function waitForFileManager() {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+        let attempts = 0;
+        const maxAttempts = 50; // 最多等待5秒
+        
         if (window.FileManager && window.FileManager.currentFolderId !== undefined) {
             console.log('FileManager已初始化:', window.FileManager);
             resolve();
-        } else {
-            console.log('等待FileManager初始化...');
-            const checkInterval = setInterval(() => {
-                if (window.FileManager && window.FileManager.currentFolderId !== undefined) {
-                    console.log('FileManager初始化完成:', window.FileManager);
-                    clearInterval(checkInterval);
-                    resolve();
-                }
-            }, 100);
+            return;
         }
+        
+        console.log('等待FileManager初始化...');
+        const checkInterval = setInterval(() => {
+            attempts++;
+            
+            if (window.FileManager && window.FileManager.currentFolderId !== undefined) {
+                console.log('FileManager初始化完成:', window.FileManager);
+                clearInterval(checkInterval);
+                resolve();
+            } else if (attempts >= maxAttempts) {
+                clearInterval(checkInterval);
+                reject(new Error('等待FileManager初始化超时'));
+            }
+        }, 100);
     });
 }
 
@@ -21,27 +30,31 @@ function waitForFileManager() {
 async function initializeUpload() {
     try {
         console.log('开始初始化上传功能...');
+        
         // 等待FileManager对象初始化完成
         await waitForFileManager();
+        
+        // 获取必要的DOM元素
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const uploadForm = document.getElementById('uploadForm');
+        const progressContainer = document.getElementById('uploadProgressContainer');
+        
+        // 检查必要的DOM元素是否存在
+        if (!fileInput || !uploadBtn || !uploadForm || !progressContainer) {
+            throw new Error('找不到必要的DOM元素，请确保页面已完全加载');
+        }
         
         console.log('FileManager状态:', {
             currentFolderId: window.FileManager.currentFolderId,
             allFiles: window.FileManager.allFiles
         });
         
-        const fileInput = document.getElementById('fileInput');
-        const uploadBtn = document.getElementById('uploadBtn');
-        const uploadForm = document.getElementById('uploadForm');
-        const progressContainer = document.getElementById('uploadProgressContainer');
         const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB in bytes
 
         // 确保上传按钮初始状态正确
-        if (uploadBtn) {
-            uploadBtn.disabled = false;
-            console.log('上传按钮已启用');
-        } else {
-            console.error('上传按钮元素未找到');
-        }
+        uploadBtn.disabled = false;
+        console.log('上传按钮已启用');
 
         // Firefox bug fix
         fileInput.addEventListener('focus', function() {
