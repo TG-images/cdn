@@ -1357,6 +1357,13 @@ async function deleteFile(id, isFolder) {
         
         // 显示确认对话框
         if (FileManager.confirmDeleteModal) {
+            // 确保在显示模态框前清除之前的进度条
+            const modalBody = FileManager.confirmDeleteModal._element.querySelector('.modal-body');
+            const existingProgressContainer = modalBody.querySelector('.progress-container');
+            if (existingProgressContainer) {
+                modalBody.removeChild(existingProgressContainer);
+            }
+            
             FileManager.confirmDeleteModal.show();
         } else {
             console.error('确认删除模态框未初始化');
@@ -1537,6 +1544,13 @@ async function deleteSelected() {
     
     // 显示确认对话框
     if (FileManager.confirmDeleteModal) {
+        // 确保在显示模态框前清除之前的进度条
+        const modalBody = FileManager.confirmDeleteModal._element.querySelector('.modal-body');
+        const existingProgressContainer = modalBody.querySelector('.progress-container');
+        if (existingProgressContainer) {
+            modalBody.removeChild(existingProgressContainer);
+        }
+        
         FileManager.confirmDeleteModal.show();
     } else {
         console.error('确认删除模态框未初始化');
