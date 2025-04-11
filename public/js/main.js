@@ -572,15 +572,15 @@ function showNewFolderModal() {
             folderNameInput.value = '';
         }
         
-        // 显示模态框
-        FileManager.newFolderModal.show();
-        
-        // 使用setTimeout确保在模态框完全显示后聚焦
-        setTimeout(() => {
+        // 在模态框显示后聚焦到输入框
+        FileManager.newFolderModal._element.addEventListener('shown.bs.modal', () => {
             if (folderNameInput) {
                 folderNameInput.focus();
             }
-        }, 100);
+        }, { once: true });
+        
+        // 显示模态框
+        FileManager.newFolderModal.show();
     } catch (error) {
         console.error('显示新建文件夹模态框失败:', error);
         showToast('无法显示新建文件夹窗口: ' + error.message, 'error');
