@@ -445,112 +445,182 @@ function updateSortIcon() {
 
 // 渲染文件列表
 function renderFileList() {
-    const fileList = document.querySelector('#fileList');
-    if (!fileList) {
-        console.error('找不到文件列表元素');
-        return;
-    }
-    
-    // 清空现有内容
+    const fileList = document.getElementById('fileList');
     fileList.innerHTML = '';
     
-    // 如果没有文件显示提示信息
     if (!FileManager.filteredFiles || FileManager.filteredFiles.length === 0) {
         const emptyRow = document.createElement('tr');
-        emptyRow.innerHTML = `
-            <td colspan="6" class="text-center">
-                <div class="p-3">
-                    <i class="bi bi-folder2-open me-2"></i>
-                    当前文件夹为空
-                </div>
-            </td>
-        `;
+        emptyRow.innerHTML = '<td colspan="6" class="text-center">没有文件或文件夹</td>';
         fileList.appendChild(emptyRow);
-        updateFileStats();
         return;
     }
     
-    // 计算当前页的文件范围
-    const startIndex = (FileManager.currentPage - 1) * FileManager.pageSize;
-    const endIndex = Math.min(startIndex + FileManager.pageSize, FileManager.filteredFiles.length);
-    const currentPageFiles = FileManager.filteredFiles.slice(startIndex, endIndex);
+    // 获取当前页码和每页显示数量
+    const currentPage = FileManager.currentPage || 1;
+    const pageSize = parseInt(document.getElementById('pageSize').value) || 10;
+    
+    // 计算分页
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = Math.min(startIndex + pageSize, FileManager.filteredFiles.length);
+    const pageFiles = FileManager.filteredFiles.slice(startIndex, endIndex);
     
     // 渲染文件列表
-    currentPageFiles.forEach((file, index) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td><input type="checkbox" class="file-checkbox" data-id="${file.id}"></td>
-            <td>${startIndex + index + 1}</td>
-            <td>
-                ${file.is_folder ? 
-                    `<i class="bi bi-folder me-2"></i>
-                     <a href="#" onclick="loadFiles('${file.id}'); return false;">${file.filename}</a>` : 
-                    `<i class="bi bi-file-earmark me-2"></i>${file.filename}`}
-            </td>
-            <td>${formatSize(file.size || 0)}</td>
-            <td>${moment(file.created_at).format('YYYY-MM-DD HH:mm:ss')}</td>
-            <td>
-                <div class="btn-group">
-                    ${!file.is_folder ? 
-                        `<button class="btn btn-sm btn-outline-primary" onclick="openTelegramFile('${file.file_id}')" title="下载">
-                            <i class="bi bi-download"></i>
-                        </button>` : ''}
-                    <button class="btn btn-sm btn-outline-secondary" onclick="showRenameModal('${file.id}', '${file.filename}')" title="重命名">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-info" onclick="showMoveModal('${file.id}')" title="移动">
-                        <i class="bi bi-folder-symlink"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="deleteFile('${file.id}', ${file.is_folder})" title="删除">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
-            </td>
-        `;
-        fileList.appendChild(tr);
+    pageFiles.forEach((file, index) => {
+        const row = document.createElement('tr');
+        
+        // 复选框
+        const checkboxCell = document.createElement('td');
+        checkboxCell.className = 'col-checkbox';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'form-check-input';
+        checkbox.dataset.id = file.id;
+        checkboxCell.appendChild(checkbox);
+        row.appendChild(checkboxCell);
+        
+        // 序号
+        const numberCell = document.createElement('td');
+        numberCell.className = 'col-number';
+        numberCell.textContent = startIndex + index + 1;
+        row.appendChild(numberCell);
+        
+        // 名称
+        const nameCell = document.createElement('td');
+        nameCell.className = 'col-name';
+        const nameLink = document.createElement('a');
+        nameLink.href = '#';
+        nameLink.textContent = file.name || file.filename;
+        
+        if (file.is_folder) {
+            nameLink.onclick = function(e) {
+                e.preventDefault();
+                loadFiles(file.id);
+            };
+        } else {
+            nameLink.onclick = function(e) {
+                e.preventDefault();
+                previewFile(file.id);
+            };
+        }
+        
+        nameCell.appendChild(nameLink);
+        row.appendChild(nameCell);
+        
+        // 大小
+        const sizeCell = document.createElement('td');
+        sizeCell.className = 'col-size';
+        sizeCell.textContent = file.is_folder ? '-' : formatSize(file.size || file.file_size || 0);
+        row.appendChild(sizeCell);
+        
+        // 创建时间
+        const dateCell = document.createElement('td');
+        dateCell.className = 'col-date';
+        dateCell.textContent = moment(file.created_at).format('YYYY-MM-DD HH:mm:ss');
+        row.appendChild(dateCell);
+        
+        // 操作
+        const actionsCell = document.createElement('td');
+        actionsCell.className = 'col-actions';
+        
+        // 下载按钮
+        if (!file.is_folder) {
+            const downloadBtn = document.createElement('button');
+            downloadBtn.className = 'btn btn-sm btn-outline-primary me-1';
+            downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
+            downloadBtn.title = '下载';
+            downloadBtn.onclick = function() {
+                openTelegramFile(file.file_id || file.id);
+            };
+            actionsCell.appendChild(downloadBtn);
+        }
+        
+        // 移动按钮
+        const moveBtn = document.createElement('button');
+        moveBtn.className = 'btn btn-sm btn-outline-info me-1';
+        moveBtn.innerHTML = '<i class="bi bi-folder-symlink"></i>';
+        moveBtn.title = '移动';
+        moveBtn.onclick = function() {
+            showMoveModal(file.id);
+        };
+        actionsCell.appendChild(moveBtn);
+        
+        // 重命名按钮
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'btn btn-sm btn-outline-secondary me-1';
+        renameBtn.innerHTML = '<i class="bi bi-pencil"></i>';
+        renameBtn.title = '重命名';
+        renameBtn.onclick = function() {
+            showRenameModal(file.id, file.name || file.filename);
+        };
+        actionsCell.appendChild(renameBtn);
+        
+        // 删除按钮
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-sm btn-outline-danger';
+        deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+        deleteBtn.title = '删除';
+        deleteBtn.onclick = function() {
+            deleteFile(file.id, file.is_folder);
+        };
+        actionsCell.appendChild(deleteBtn);
+        
+        row.appendChild(actionsCell);
+        fileList.appendChild(row);
     });
     
-    // 更新文件统计信息
-    updateFileStats();
-    
-    // 更新分页信息
+    // 更新分页
     updatePagination(FileManager.filteredFiles.length);
 }
 
 // 更新面包屑
 function updateBreadcrumb(folderPath) {
-    const breadcrumb = document.querySelector('#breadcrumb ol');
-    breadcrumb.innerHTML = '';
+    const breadcrumb = document.getElementById('breadcrumb');
+    const ol = breadcrumb.querySelector('ol');
+    ol.innerHTML = '';
+    
+    // 确保 folderPath 是数组
+    if (!Array.isArray(folderPath)) {
+        console.error('folderPath 不是数组:', folderPath);
+        folderPath = [];
+    }
     
     // 添加根目录
     const rootItem = document.createElement('li');
     rootItem.className = 'breadcrumb-item';
-    rootItem.innerHTML = `<a href="#" data-id="null">根目录</a>`;
-    breadcrumb.appendChild(rootItem);
+    const rootLink = document.createElement('a');
+    rootLink.href = '#';
+    rootLink.textContent = '根目录';
+    rootLink.dataset.id = 'null';
+    rootLink.onclick = function(e) {
+        e.preventDefault();
+        loadFiles();
+    };
+    rootItem.appendChild(rootLink);
+    ol.appendChild(rootItem);
     
     // 添加文件夹路径
-    if (folderPath && folderPath.length > 0) {
-        folderPath.forEach((folder, index) => {
-            const item = document.createElement('li');
-            item.className = 'breadcrumb-item';
-            if (index === folderPath.length - 1) {
-                item.classList.add('active');
-                item.innerHTML = folder.name;
-            } else {
-                item.innerHTML = `<a href="#" data-id="${folder.id}">${folder.name}</a>`;
-            }
-            breadcrumb.appendChild(item);
-        });
-    }
-    
-    // 添加面包屑点击事件
-    breadcrumb.querySelectorAll('a').forEach(link => {
-        link.addEventListener('click', (e) => {
-    e.preventDefault();
-            currentFolderId = link.dataset.id === 'null' ? null : link.dataset.id;
-            currentPage = 1; // 重置为第一页
-            loadFiles();
-        });
+    folderPath.forEach((folder, index) => {
+        const item = document.createElement('li');
+        item.className = 'breadcrumb-item';
+        
+        if (index === folderPath.length - 1) {
+            // 当前文件夹
+            item.classList.add('active');
+            item.textContent = folder.name;
+        } else {
+            // 父文件夹
+            const link = document.createElement('a');
+            link.href = '#';
+            link.textContent = folder.name;
+            link.dataset.id = folder.id;
+            link.onclick = function(e) {
+                e.preventDefault();
+                loadFiles(folder.id);
+            };
+            item.appendChild(link);
+        }
+        
+        ol.appendChild(item);
     });
 }
 
@@ -1189,39 +1259,76 @@ async function moveFile() {
 
 // 删除文件或文件夹
 async function deleteFile(id, isFolder) {
-    console.log('准备删除文件:', { id, isFolder });
-    
-    // 设置待删除项
-    FileManager.pendingDeleteId = id;
-    FileManager.pendingDeleteIsFolder = isFolder;
-    
-    // 更新确认消息
-    const message = isFolder ? 
-        '确定要删除此文件夹及其所有内容吗？' : 
-        '确定要删除此文件吗？';
-    document.getElementById('confirmDeleteMessage').textContent = message;
-    
-    // 显示确认对话框
-    const confirmDeleteModal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
-    confirmDeleteModal.show();
-    
-    // 绑定确认删除按钮事件
-    const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
-    confirmDeleteBtn.onclick = async function() {
-        try {
-            console.log('开始删除文件:', id);
-            await performDelete(id);
-            showToast('删除成功');
-            loadFiles();
-        } catch (error) {
-            console.error('删除失败:', error);
-            showToast(`删除失败: ${error.message}`, 'error');
-        } finally {
-            confirmDeleteModal.hide();
-            FileManager.pendingDeleteId = null;
-            FileManager.pendingDeleteIsFolder = false;
+    try {
+        // 设置待删除的文件ID
+        FileManager.pendingDeleteId = id;
+        
+        // 设置确认消息
+        const confirmMessage = `确定要删除${isFolder ? '文件夹' : '文件'}吗？`;
+        document.getElementById('confirmDeleteMessage').textContent = confirmMessage;
+        
+        // 确保确认删除按钮的事件绑定正确
+        const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+        if (confirmDeleteBtn) {
+            confirmDeleteBtn.onclick = async function() {
+                try {
+                    // 创建进度条容器
+                    const progressContainer = document.createElement('div');
+                    progressContainer.className = 'progress-container mt-3';
+                    progressContainer.innerHTML = `
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" style="width: 0%">0%</div>
+                        </div>
+                        <div class="text-center mt-2">正在删除...</div>
+                    `;
+                    
+                    // 添加到模态框
+                    const modalBody = FileManager.confirmDeleteModal._element.querySelector('.modal-body');
+                    modalBody.appendChild(progressContainer);
+                    
+                    // 禁用确认按钮
+                    confirmDeleteBtn.disabled = true;
+                    
+                    // 更新进度条
+                    const progressBar = progressContainer.querySelector('.progress-bar');
+                    progressBar.style.width = '30%';
+                    progressBar.textContent = '30%';
+                    
+                    // 执行删除
+                    await performDelete(id);
+                    
+                    // 更新进度条
+                    progressBar.style.width = '100%';
+                    progressBar.textContent = '100%';
+                    
+                    // 显示成功消息
+                    showToast('删除成功');
+                    
+                    // 关闭模态框并刷新文件列表
+                    FileManager.confirmDeleteModal.hide();
+                    loadFiles();
+                } catch (error) {
+                    console.error('删除失败:', error);
+                    showToast(`删除失败: ${error.message}`, 'error');
+                } finally {
+                    FileManager.pendingDeleteId = null;
+                }
+            };
+            console.log('已重新绑定确认删除按钮点击事件');
         }
-    };
+        
+        // 显示确认对话框
+        if (FileManager.confirmDeleteModal) {
+            FileManager.confirmDeleteModal.show();
+        } else {
+            console.error('确认删除模态框未初始化');
+            showToast('系统错误：确认删除模态框未初始化', 'error');
+        }
+    } catch (error) {
+        console.error('删除文件时出错:', error);
+        showToast(`删除失败: ${error.message}`, 'error');
+    }
 }
 
 // 实际执行删除操作
