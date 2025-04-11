@@ -556,8 +556,26 @@ function updateBreadcrumb(folderPath) {
 
 // 显示新建文件夹模态框
 function showNewFolderModal() {
-    const modal = new bootstrap.Modal(document.getElementById('newFolderModal'));
-    modal.show();
+    try {
+        if (!FileManager.newFolderModal) {
+            const modalElement = document.getElementById('newFolderModal');
+            if (modalElement) {
+                FileManager.newFolderModal = new bootstrap.Modal(modalElement);
+            } else {
+                throw new Error('找不到新建文件夹模态框元素');
+            }
+        }
+        FileManager.newFolderModal.show();
+        
+        // 清空输入框
+        const folderNameInput = document.getElementById('folderName');
+        if (folderNameInput) {
+            folderNameInput.value = '';
+        }
+    } catch (error) {
+        console.error('显示新建文件夹模态框失败:', error);
+        showToast('无法显示新建文件夹窗口: ' + error.message, 'error');
+    }
 }
 
 // 创建文件夹
@@ -574,22 +592,40 @@ async function createFolder() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 name, 
-                parent_id: FileManager.currentFolderId   // 使用FileManager.currentFolderId
+                parent_id: FileManager.currentFolderId
             })
         });
 
-        if (response.ok) {
+        const result = await response.json();
+
+        if (response.ok && result.success) {
             showToast('文件夹创建成功');
-            FileManager.newFolderModal.hide();  // 使用FileManager.newFolderModal
-            FileManager.currentPage = 1; // 创建新文件夹后回到第一页
-            loadFiles();
+            
+            // 安全地关闭模态框
+            if (FileManager.newFolderModal) {
+                FileManager.newFolderModal.hide();
+            } else {
+                const modalElement = document.getElementById('newFolderModal');
+                if (modalElement) {
+                    const modal = bootstrap.Modal.getInstance(modalElement);
+                    if (modal) {
+                        modal.hide();
+                    }
+                }
+            }
+            
+            // 清空输入框
+            document.getElementById('folderName').value = '';
+            
+            // 重置到第一页并重新加载文件列表
+            FileManager.currentPage = 1;
+            await loadFiles();
         } else {
-            const errorData = await response.json();
-            showToast(errorData.error || '文件夹创建失败', 'error');
+            showToast(result.error || '文件夹创建失败', 'error');
         }
     } catch (error) {
         console.error('创建文件夹出错:', error);
-        showToast('文件夹创建失败', 'error');
+        showToast('文件夹创建失败: ' + error.message, 'error');
     }
 }
 
@@ -1660,20 +1696,24 @@ async function initPage() {
         };
         
         // 初始化模态框
-        const modals = [
-            'newFolderModal',
-            'moveModal',
-            'batchMoveModal',
-            'confirmDeleteModal',
-            'changePasswordModal',
-            'renameModal',
-            'previewModal'
-        ];
+        const modalIds = {
+            newFolderModal: 'newFolderModal',
+            moveModal: 'moveModal',
+            batchMoveModal: 'batchMoveModal',
+            confirmDeleteModal: 'confirmDeleteModal',
+            changePasswordModal: 'changePasswordModal',
+            renameModal: 'renameModal',
+            previewModal: 'previewModal'
+        };
         
-        modals.forEach(modalId => {
+        // 初始化每个模态框并保存到FileManager中
+        Object.entries(modalIds).forEach(([key, modalId]) => {
             const modalElement = document.getElementById(modalId);
             if (modalElement) {
-                new bootstrap.Modal(modalElement);
+                FileManager[key] = new bootstrap.Modal(modalElement);
+                console.log(`已初始化模态框: ${modalId}`);
+            } else {
+                console.error(`找不到模态框元素: ${modalId}`);
             }
         });
         
