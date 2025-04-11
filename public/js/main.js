@@ -1189,21 +1189,39 @@ async function moveFile() {
 
 // 删除文件或文件夹
 async function deleteFile(id, isFolder) {
-    console.log('准备删除:', { id, isFolder });
-    // 存储待删除的ID和类型
+    console.log('准备删除文件:', { id, isFolder });
+    
+    // 设置待删除项
     FileManager.pendingDeleteId = id;
     FileManager.pendingDeleteIsFolder = isFolder;
     
-    // 根据类型设置不同的确认消息
-    const confirmMessage = isFolder 
-        ? '此操作将递归删除文件夹下的所有文件，是否继续？'
-        : '确定要删除此文件吗？';
-    
-    // 设置确认消息
-    document.getElementById('confirmDeleteMessage').textContent = confirmMessage;
+    // 更新确认消息
+    const message = isFolder ? 
+        '确定要删除此文件夹及其所有内容吗？' : 
+        '确定要删除此文件吗？';
+    document.getElementById('confirmDeleteMessage').textContent = message;
     
     // 显示确认对话框
-    FileManager.confirmDeleteModal.show();
+    const confirmDeleteModal = new bootstrap.Modal(document.getElementById('confirmDeleteModal'));
+    confirmDeleteModal.show();
+    
+    // 绑定确认删除按钮事件
+    const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+    confirmDeleteBtn.onclick = async function() {
+        try {
+            console.log('开始删除文件:', id);
+            await performDelete(id);
+            showToast('删除成功');
+            loadFiles();
+        } catch (error) {
+            console.error('删除失败:', error);
+            showToast(`删除失败: ${error.message}`, 'error');
+        } finally {
+            confirmDeleteModal.hide();
+            FileManager.pendingDeleteId = null;
+            FileManager.pendingDeleteIsFolder = false;
+        }
+    };
 }
 
 // 实际执行删除操作
