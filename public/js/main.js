@@ -1766,25 +1766,9 @@ function copyToClipboard(elementId) {
 
 // 设置每页显示数量
 function setPageSize(size) {
-  size = parseInt(size, 10);
-  if (isNaN(size) || size < 1) return;
-  
-  // 记住当前页的起始位置
-  const currentStart = (currentPage - 1) * pageSize;
-  
-  // 更新每页显示数量
-  pageSize = size;
-  
-  // 更新当前页码以保持相同的起始位置
-  currentPage = Math.floor(currentStart / pageSize) + 1;
-  
-  // 重新渲染文件列表
-            renderFileList();
-  
-  // 保存设置到本地存储
-  localStorage.setItem('pageSize', pageSize);
-  
-  console.log('页面大小已更新:', {pageSize, currentPage});
+    window.FileManager.pageSize = parseInt(size);
+    window.FileManager.currentPage = 1; // 重置到第一页
+    loadFiles();
 }
 
 // 页面初始化函数
