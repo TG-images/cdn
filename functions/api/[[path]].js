@@ -723,7 +723,10 @@ export async function onRequest(context) {
           name: file.filename
         })) || [];
         
-        return new Response(JSON.stringify(enhancedResults), {
+        return new Response(JSON.stringify({
+          success: true,
+          files: enhancedResults
+        }), {
           headers: {
             'Content-Type': 'application/json',
             ...corsHeaders
@@ -732,6 +735,7 @@ export async function onRequest(context) {
       } catch (error) {
         console.error('获取文件列表错误:', error);
         return new Response(JSON.stringify({
+          success: false,
           error: '获取文件列表失败',
           message: error.message,
           stack: error.stack
