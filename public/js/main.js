@@ -1882,8 +1882,14 @@ async function openTelegramFile(fileId) {
             throw new Error('文件列表未初始化');
         }
         
-        // 获取文件信息
-        const file = FileManager.allFiles.find(f => String(f.id) === String(fileId));
+        // 获取文件信息 - 首先尝试通过id查找
+        let file = FileManager.allFiles.find(f => String(f.id) === String(fileId));
+        
+        // 如果通过id没找到，尝试通过file_id查找
+        if (!file && fileId.includes(':')) {
+            file = FileManager.allFiles.find(f => f.file_id === fileId);
+        }
+        
         console.log('找到的文件信息:', file);
         
         if (!file) {
