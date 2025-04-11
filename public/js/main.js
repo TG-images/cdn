@@ -606,6 +606,9 @@ function updateBreadcrumb(folderPath) {
     rootLink.dataset.id = 'null';
     rootLink.onclick = function(e) {
         e.preventDefault();
+        // 重置当前文件夹ID和路径
+        FileManager.currentFolderId = null;
+        FileManager.currentPath = '';
         loadFiles();
     };
     rootItem.appendChild(rootLink);
