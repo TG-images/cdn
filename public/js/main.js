@@ -278,18 +278,29 @@ async function loadFiles(path = '') {
             throw new Error(data.error || '获取文件列表失败');
         }
 
-        // 保存所有文件数据
-        FileManager.allFiles = data.files.map(file => ({
-            id: file.id,
-            filename: file.filename || '未命名',
-            file_id: file.file_id,
-            message_id: file.message_id,
-            parent_id: file.parent_id,
-            is_folder: file.is_folder || false,
-            size: parseInt(file.file_size || 0, 10),
-            mime_type: file.mime_type,
-            created_at: file.created_at
-        }));
+        // 保存所有文件数据，确保正确处理file_id和message_id
+        FileManager.allFiles = data.files.map(file => {
+            // 确保所有必要的字段都存在
+            const processedFile = {
+                id: file.id,
+                filename: file.filename || file.name || '未命名',
+                file_id: file.file_id || file.tg_file_id, // 兼容两种字段名
+                message_id: file.message_id,
+                parent_id: file.parent_id,
+                is_folder: file.is_folder || false,
+                size: parseInt(file.file_size || 0, 10),
+                mime_type: file.mime_type,
+                created_at: file.created_at
+            };
+
+            // 如果file_id包含message_id信息，提取出来
+            if (processedFile.file_id && processedFile.file_id.includes(':') && !processedFile.message_id) {
+                processedFile.message_id = processedFile.file_id.split(':')[1];
+            }
+
+            console.log('处理后的文件信息:', processedFile);
+            return processedFile;
+        });
 
         // 初始化过滤后的文件列表
         FileManager.filteredFiles = [...FileManager.allFiles];
@@ -1860,28 +1871,53 @@ async function checkLoginStatus() {
 // 打开Telegram文件
 async function openTelegramFile(fileId) {
     try {
+        console.log('开始打开文件，参数:', {
+            fileId: fileId,
+            type: typeof fileId,
+            allFilesCount: FileManager.allFiles?.length || 0
+        });
+        
+        // 确保FileManager.allFiles存在
+        if (!FileManager.allFiles || !Array.isArray(FileManager.allFiles)) {
+            throw new Error('文件列表未初始化');
+        }
+        
         // 获取文件信息
         const file = FileManager.allFiles.find(f => String(f.id) === String(fileId));
+        console.log('找到的文件信息:', file);
+        
         if (!file) {
             throw new Error('文件不存在');
         }
         
-        // 获取消息ID
-        const messageId = file.message_id || (file.tg_file_id && file.tg_file_id.includes(':') ? file.tg_file_id.split(':')[1] : null);
+        // 获取消息ID，优先使用message_id
+        const messageId = file.message_id || 
+                         (file.file_id && file.file_id.includes(':') ? 
+                          file.file_id.split(':')[1] : null);
+                          
+        console.log('提取的消息ID:', messageId);
+        
         if (!messageId) {
             throw new Error('无法获取消息ID');
         }
         
-        // 尝试构建电报链接（t.me或直接获取文件）
-        const chatId = file.file_id && file.file_id.includes(':') ? file.file_id.split(':')[0] : null;
+        // 尝试构建电报链接
+        const chatId = file.file_id && file.file_id.includes(':') ? 
+                      file.file_id.split(':')[0] : null;
+                      
+        console.log('提取的聊天ID:', chatId);
+        
         if (chatId) {
             // 构建Telegram链接
             const url = `https://t.me/c/${chatId.replace('-100', '')}/${messageId}`;
+            console.log('生成的Telegram链接:', url);
             window.open(url, '_blank');
         } else {
             // 回退到直接下载
-            const encodedFileName = encodeURIComponent(file.filename || file.name || '');
-            window.open(`/proxy/${fileId}?original_name=${encodedFileName}`, '_blank');
+            const encodedFileName = encodeURIComponent(file.filename || file.name || '未命名文件');
+            const downloadUrl = `/proxy/${fileId}?original_name=${encodedFileName}`;
+            console.log('生成的下载链接:', downloadUrl);
+            window.open(downloadUrl, '_blank');
         }
     } catch (error) {
         console.error('打开Telegram文件失败:', error);
