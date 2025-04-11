@@ -425,7 +425,7 @@ function handleSort(field) {
     if (FileManager.sortField === field) {
         // 如果点击的是当前排序字段，切换排序顺序
         FileManager.sortOrder = FileManager.sortOrder === 'asc' ? 'desc' : 'asc';
-    } else {
+        } else {
         // 如果点击的是新字段，设置为升序
         FileManager.sortField = field;
         FileManager.sortOrder = 'asc';
@@ -437,8 +437,8 @@ function handleSort(field) {
     // 对过滤后的文件列表进行排序
     if (FileManager.filteredFiles) {
         FileManager.filteredFiles = sortFiles(FileManager.filteredFiles, FileManager.sortField, FileManager.sortOrder);
-        // 重新渲染文件列表
-        renderFileList();
+    // 重新渲染文件列表
+    renderFileList();
     }
     
     console.log('排序完成:', { 
@@ -577,37 +577,41 @@ function renderFileList() {
         const actionsCell = document.createElement('td');
         actionsCell.className = 'col-actions';
         
+        // 创建操作按钮容器
+        const actionButtons = document.createElement('div');
+        actionButtons.className = 'action-buttons';
+        
         // 下载按钮
         if (!file.is_folder) {
             const downloadBtn = document.createElement('button');
-            downloadBtn.className = 'btn btn-sm btn-outline-primary me-1';
+            downloadBtn.className = 'btn btn-sm btn-outline-primary';
             downloadBtn.innerHTML = '<i class="bi bi-download"></i>';
             downloadBtn.title = '下载';
             downloadBtn.onclick = function() {
                 openTelegramFile(file.file_id || file.id);
             };
-            actionsCell.appendChild(downloadBtn);
+            actionButtons.appendChild(downloadBtn);
         }
         
         // 移动按钮
         const moveBtn = document.createElement('button');
-        moveBtn.className = 'btn btn-sm btn-outline-info me-1';
+        moveBtn.className = 'btn btn-sm btn-outline-info';
         moveBtn.innerHTML = '<i class="bi bi-folder-symlink"></i>';
         moveBtn.title = '移动';
         moveBtn.onclick = function() {
             showMoveModal(file.id);
         };
-        actionsCell.appendChild(moveBtn);
+        actionButtons.appendChild(moveBtn);
         
         // 重命名按钮
         const renameBtn = document.createElement('button');
-        renameBtn.className = 'btn btn-sm btn-outline-secondary me-1';
+        renameBtn.className = 'btn btn-sm btn-outline-secondary';
         renameBtn.innerHTML = '<i class="bi bi-pencil"></i>';
         renameBtn.title = '重命名';
         renameBtn.onclick = function() {
             showRenameModal(file.id, file.name || file.filename);
         };
-        actionsCell.appendChild(renameBtn);
+        actionButtons.appendChild(renameBtn);
         
         // 删除按钮
         const deleteBtn = document.createElement('button');
@@ -617,7 +621,10 @@ function renderFileList() {
         deleteBtn.onclick = function() {
             deleteFile(file.id, file.is_folder);
         };
-        actionsCell.appendChild(deleteBtn);
+        actionButtons.appendChild(deleteBtn);
+        
+        // 将按钮容器添加到单元格
+        actionsCell.appendChild(actionButtons);
         
         row.appendChild(actionsCell);
         fileList.appendChild(row);
@@ -657,15 +664,15 @@ function updateBreadcrumb(folderPath) {
     ol.appendChild(rootItem);
     
     // 添加文件夹路径
-    folderPath.forEach((folder, index) => {
-        const item = document.createElement('li');
-        item.className = 'breadcrumb-item';
+        folderPath.forEach((folder, index) => {
+            const item = document.createElement('li');
+            item.className = 'breadcrumb-item';
         
-        if (index === folderPath.length - 1) {
+            if (index === folderPath.length - 1) {
             // 当前文件夹
-            item.classList.add('active');
+                item.classList.add('active');
             item.textContent = folder.name;
-        } else {
+            } else {
             // 父文件夹
             const link = document.createElement('a');
             link.href = '#';
@@ -694,7 +701,7 @@ function showNewFolderModal() {
             }
         }
         
-        // 清空输入框
+    // 清空输入框
         const folderNameInput = document.getElementById('folderName');
         if (folderNameInput) {
             folderNameInput.value = '';
@@ -707,8 +714,8 @@ function showNewFolderModal() {
             }
         }, { once: true });
         
-        // 显示模态框
-        FileManager.newFolderModal.show();
+    // 显示模态框
+    FileManager.newFolderModal.show();
     } catch (error) {
         console.error('显示新建文件夹模态框失败:', error);
         showToast('无法显示新建文件夹窗口: ' + error.message, 'error');
@@ -741,7 +748,7 @@ async function createFolder() {
             // 安全地关闭模态框
             if (FileManager.newFolderModal) {
                 FileManager.newFolderModal.hide();
-            } else {
+        } else {
                 const modalElement = document.getElementById('newFolderModal');
                 if (modalElement) {
                     const modal = bootstrap.Modal.getInstance(modalElement);
@@ -1325,13 +1332,13 @@ async function deleteFile(id, isFolder) {
         }
         
         // 设置待删除的文件ID
-        FileManager.pendingDeleteId = id;
-        FileManager.pendingDeleteIsFolder = isFolder;
-        
-        // 设置确认消息
+    FileManager.pendingDeleteId = id;
+    FileManager.pendingDeleteIsFolder = isFolder;
+    
+    // 设置确认消息
         const confirmMessage = `确定要删除${isFolder ? '文件夹' : '文件'}吗？`;
-        document.getElementById('confirmDeleteMessage').textContent = confirmMessage;
-        
+    document.getElementById('confirmDeleteMessage').textContent = confirmMessage;
+    
         // 确保确认删除按钮的事件绑定正确
         const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
         if (confirmDeleteBtn) {
@@ -1375,21 +1382,21 @@ async function deleteFile(id, isFolder) {
                     progressBar.textContent = '100%';
                     
                     // 显示成功消息
-                    showToast('删除成功');
+                showToast('删除成功');
                     
                     // 关闭模态框并刷新文件列表
                     FileManager.confirmDeleteModal.hide();
-                    loadFiles();
-                } catch (error) {
+                loadFiles();
+    } catch (error) {
                     console.error('删除失败:', error);
-                    showToast(`删除失败: ${error.message}`, 'error');
-                } finally {
+            showToast(`删除失败: ${error.message}`, 'error');
+        } finally {
                     // 确保在任何情况下都重置状态
                     FileManager.pendingDeleteId = null;
                     FileManager.pendingDeleteIsFolder = false;
                     // 如果模态框仍然显示，则关闭它
                     if (FileManager.confirmDeleteModal && FileManager.confirmDeleteModal._element.classList.contains('show')) {
-                        FileManager.confirmDeleteModal.hide();
+                FileManager.confirmDeleteModal.hide();
                     }
                 }
             };
@@ -1409,8 +1416,8 @@ async function deleteFile(id, isFolder) {
         } else {
             console.error('确认删除模态框未初始化');
             showToast('系统错误：确认删除模态框未初始化', 'error');
-            FileManager.pendingDeleteId = null;
-            FileManager.pendingDeleteIsFolder = false;
+        FileManager.pendingDeleteId = null;
+        FileManager.pendingDeleteIsFolder = false;
         }
     } catch (error) {
         console.error('删除文件时出错:', error);
@@ -1426,7 +1433,7 @@ async function performDelete(fileId) {
         console.log('开始删除文件:', fileId);
         
         const response = await fetch(`/api/files/${fileId}`, {
-            method: 'DELETE',
+                    method: 'DELETE',
             headers: {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json'
@@ -1444,7 +1451,7 @@ async function performDelete(fileId) {
         
         if (contentType && contentType.includes('application/json')) {
             data = await response.json();
-        } else {
+    } else {
             const text = await response.text();
             console.error('非JSON响应:', text);
             throw new Error('服务器返回了非JSON格式的响应');
@@ -1599,7 +1606,7 @@ async function deleteSelected() {
             modalBody.removeChild(existingProgressContainer);
         }
         
-        FileManager.confirmDeleteModal.show();
+    FileManager.confirmDeleteModal.show();
     } else {
         console.error('确认删除模态框未初始化');
         showToast('系统错误：确认删除模态框未初始化', 'error');
@@ -1977,7 +1984,7 @@ function setPageSize(size) {
 
 // 页面初始化函数
 async function initPage() {
-    try {
+  try {
         console.log('开始页面初始化...');
         
         // 初始化 FileManager 对象
@@ -2016,8 +2023,8 @@ async function initPage() {
         });
         
         // 设置页面大小选择器的值
-        const pageSizeSelect = document.getElementById('pageSize');
-        if (pageSizeSelect) {
+    const pageSizeSelect = document.getElementById('pageSize');
+    if (pageSizeSelect) {
             pageSizeSelect.value = FileManager.pageSize;
             pageSizeSelect.addEventListener('change', function() {
                 FileManager.pageSize = parseInt(this.value);
@@ -2072,7 +2079,7 @@ async function initPage() {
             console.log('页面初始化完成');
         }
     } catch (error) {
-        console.error('页面初始化错误:', error);
+    console.error('页面初始化错误:', error);
         showToast(`页面初始化失败: ${error.message}`, 'error');
     }
 }
