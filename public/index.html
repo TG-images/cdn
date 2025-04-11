@@ -613,16 +613,22 @@
                         await initPage();
                         console.log('页面初始化完成，开始加载上传功能...');
                         
+                        // 等待一小段时间确保DOM完全加载
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        
                         // 在FileManager初始化完成后加载upload.js
                         const uploadScript = document.createElement('script');
-                        uploadScript.src = '/js/upload.js';
-                        uploadScript.onload = function() {
+                        uploadScript.src = window.location.origin + '/js/upload.js';
+                        uploadScript.onload = async function() {
                             // 确保upload.js加载完成后初始化上传功能
                             if (typeof initializeUpload === 'function') {
-                                initializeUpload().catch(error => {
+                                try {
+                                    await initializeUpload();
+                                    console.log('上传功能初始化成功');
+                                } catch (error) {
                                     console.error('初始化上传功能失败:', error);
                                     showToast('初始化上传功能失败：' + error.message, 'error');
-                                });
+                                }
                             }
                         };
                         document.body.appendChild(uploadScript);
