@@ -370,7 +370,7 @@ function updateSortIcon() {
 
 // 渲染文件列表
 function renderFileList() {
-    const fileList = document.getElementById('fileList');
+    const fileList = document.querySelector('#fileList tbody');
     if (!fileList) {
         console.error('找不到文件列表元素');
         return;
@@ -381,7 +381,7 @@ function renderFileList() {
     
     // 确保有文件要显示
     if (!FileManager.filteredFiles || FileManager.filteredFiles.length === 0) {
-        fileList.innerHTML = '<tr><td colspan="6" class="text-center">没有文件</td></tr>';
+        console.log('没有文件需要显示');
         return;
     }
     
@@ -442,16 +442,23 @@ function renderFileList() {
             nameSpan.textContent = file.filename;
         }
         nameDiv.appendChild(nameSpan);
+        
         nameCell.appendChild(nameDiv);
         row.appendChild(nameCell);
 
         // 添加大小
         const sizeCell = document.createElement('td');
         sizeCell.className = 'col-size';
-        sizeCell.textContent = file.is_folder ? '计算中...' : formatFileSize(file.size);
+        if (file.is_folder) {
+            const size = FileManager.folderSizeCache[file.id] !== undefined ? 
+                FileManager.folderSizeCache[file.id] : 0;
+            sizeCell.textContent = formatSize(size);
+        } else {
+            sizeCell.textContent = formatSize(file.size || 0);
+        }
         row.appendChild(sizeCell);
 
-        // 添加创建时间
+        // 添加日期
         const dateCell = document.createElement('td');
         dateCell.className = 'col-date';
         dateCell.textContent = moment(file.created_at).format('YYYY-MM-DD HH:mm:ss');
@@ -460,38 +467,57 @@ function renderFileList() {
         // 添加操作按钮
         const actionsCell = document.createElement('td');
         actionsCell.className = 'col-actions';
-        const actionsDiv = document.createElement('div');
-        actionsDiv.className = 'btn-group';
+        const btnGroup = document.createElement('div');
+        btnGroup.className = 'btn-group';
         
-        // 重命名按钮
-        const renameBtn = document.createElement('button');
-        renameBtn.className = 'btn btn-sm btn-warning me-1';
-        renameBtn.innerHTML = '<i class="bi bi-pencil"></i>';
-        renameBtn.title = '重命名';
-        renameBtn.onclick = () => showRenameModal(file.id, file.filename);
-        actionsDiv.appendChild(renameBtn);
-        
-        // 移动按钮
+        if (file.is_folder) {
+            const openBtn = document.createElement('button');
+            openBtn.className = 'btn btn-sm btn-outline-primary';
+            openBtn.innerHTML = '<i class="bi bi-folder2-open me-1"></i>打开';
+            openBtn.title = '打开文件夹';
+            openBtn.onclick = () => {
+                FileManager.currentFolderId = file.id;
+                FileManager.currentPage = 1;
+                loadFiles();
+            };
+            btnGroup.appendChild(openBtn);
+        } else {
+            const previewBtn = document.createElement('button');
+            previewBtn.className = 'btn btn-sm btn-outline-primary';
+            previewBtn.innerHTML = '<i class="bi bi-eye me-1"></i>预览';
+            previewBtn.title = '预览';
+            previewBtn.onclick = () => previewFile(file.id);
+            btnGroup.appendChild(previewBtn);
+        }
+
         const moveBtn = document.createElement('button');
-        moveBtn.className = 'btn btn-sm btn-info me-1';
-        moveBtn.innerHTML = '<i class="bi bi-arrows-move"></i>';
+        moveBtn.className = 'btn btn-sm btn-outline-info';
+        moveBtn.innerHTML = '<i class="bi bi-folder-symlink me-1"></i>移动';
         moveBtn.title = '移动';
         moveBtn.onclick = () => showMoveModal(file.id);
-        actionsDiv.appendChild(moveBtn);
+        btnGroup.appendChild(moveBtn);
         
-        // 删除按钮
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'btn btn-sm btn-outline-secondary';
+        renameBtn.innerHTML = '<i class="bi bi-pencil me-1"></i>重命名';
+        renameBtn.title = '重命名';
+        renameBtn.onclick = () => showRenameModal(file.id, file.filename);
+        btnGroup.appendChild(renameBtn);
+
         const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'btn btn-sm btn-danger';
-        deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+        deleteBtn.className = 'btn btn-sm btn-outline-danger';
+        deleteBtn.innerHTML = '<i class="bi bi-trash me-1"></i>删除';
         deleteBtn.title = '删除';
         deleteBtn.onclick = () => deleteFile(file.id, file.is_folder);
-        actionsDiv.appendChild(deleteBtn);
+        btnGroup.appendChild(deleteBtn);
         
-        actionsCell.appendChild(actionsDiv);
+        actionsCell.appendChild(btnGroup);
         row.appendChild(actionsCell);
 
         fileList.appendChild(row);
     });
+    
+    console.log('文件列表渲染完成，共添加', fileList.children.length, '行');
 }
 
 // 更新面包屑
