@@ -4,21 +4,30 @@ function waitForFileManager() {
         let attempts = 0;
         const maxAttempts = 50; // 最多等待5秒
         
+        console.log('开始等待FileManager初始化...');
+        
         if (window.FileManager && window.FileManager.currentFolderId !== undefined) {
-            console.log('FileManager已初始化:', window.FileManager);
+            console.log('FileManager已初始化:', {
+                currentFolderId: window.FileManager.currentFolderId,
+                allFiles: window.FileManager.allFiles
+            });
             resolve();
             return;
         }
         
-        console.log('等待FileManager初始化...');
         const checkInterval = setInterval(() => {
             attempts++;
+            console.log(`第${attempts}次检查FileManager状态...`);
             
             if (window.FileManager && window.FileManager.currentFolderId !== undefined) {
-                console.log('FileManager初始化完成:', window.FileManager);
+                console.log('FileManager初始化完成:', {
+                    currentFolderId: window.FileManager.currentFolderId,
+                    allFiles: window.FileManager.allFiles
+                });
                 clearInterval(checkInterval);
                 resolve();
             } else if (attempts >= maxAttempts) {
+                console.error('等待FileManager初始化超时');
                 clearInterval(checkInterval);
                 reject(new Error('等待FileManager初始化超时'));
             }
